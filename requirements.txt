@@ -1,0 +1,10 @@
+# Utilitários
+python-dateutil>=2.8.0
+
+# Downloader de Música (cdripper-console.py / cdripper-gui.py)
+yt-dlp>=2024.0.0
+colorama>=0.4.6
+
+# GUI (cdripper-gui.py)
+# tkinter e dependencia de sistema do Python (nao pacote pip).
+# Linux Debian/Ubuntu: sudo apt install python3-tk
