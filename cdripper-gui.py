@@ -1,0 +1,631 @@
+#!/usr/bin/env python3
+"""
+Isaac GUI - versão infantil do downloader.
+
+Interface gráfica com botões grandes para:
+- Buscar e baixar música do YouTube
+- Copiar músicas MP3 do CD para ./downloads/cdX
+- Em caso de erro na cópia, buscar a música no YouTube e baixar
+"""
+
+from __future__ import annotations
+
+import os
+import platform
+import shutil
+import sys
+import threading
+
+try:
+    import tkinter as tk
+    from tkinter import messagebox, ttk
+except Exception as exc:
+    print("Erro: tkinter/_tkinter nao esta disponivel neste Python.")
+    print(f"Detalhe: {exc}")
+    system = platform.system()
+    if system == "Linux":
+        print("Instale no sistema e tente novamente:")
+        print("  Debian/Ubuntu: sudo apt install python3-tk")
+        print("  Fedora: sudo dnf install python3-tkinter")
+    elif system == "Darwin":
+        print("No macOS, use Python oficial de python.org ou um ambiente com Tk habilitado.")
+    elif system == "Windows":
+        print("No Windows, reinstale o Python oficial marcando o componente tcl/tk e IDLE.")
+    else:
+        print("Use uma instalacao de Python com suporte a tkinter.")
+    raise SystemExit(1)
+
+from cdripper_utils import (
+    download_mp3,
+    find_cd_drives,
+    find_mp3_files,
+    get_next_cd_number,
+    search_youtube,
+)
+
+
+class IsaacGUIApp:
+    def __init__(self, root: tk.Tk) -> None:
+        self.root = root
+        self.root.title("Isaac Music - Modo Infantil")
+        self.root.geometry("1080x760")
+        self.root.minsize(980, 680)
+        self.root.configure(bg="#F6FBFF")
+
+        self.current_results: list[dict] = []
+        self.current_drives: list[str] = []
+        self.current_cd_path: str | None = None
+
+        self._build_styles()
+        self._build_header()
+        self._build_tabs()
+
+    def _build_styles(self) -> None:
+        self.title_font = ("Arial Rounded MT Bold", 28)
+        self.section_font = ("Arial Rounded MT Bold", 19)
+        self.text_font = ("Arial", 14)
+        self.big_btn_font = ("Arial Rounded MT Bold", 16)
+
+        style = ttk.Style()
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+
+        style.configure("TNotebook", background="#F6FBFF", borderwidth=0)
+        style.configure("TNotebook.Tab", font=("Arial Rounded MT Bold", 13), padding=(18, 10))
+        style.map("TNotebook.Tab", background=[("selected", "#BDE0FE"), ("!selected", "#EAF6FF")])
+
+    def _build_header(self) -> None:
+        header = tk.Frame(self.root, bg="#CDEBFF", height=110)
+        header.pack(fill="x")
+
+        title = tk.Label(
+            header,
+            text="🎵 Isaac Music 🎵",
+            font=self.title_font,
+            bg="#CDEBFF",
+            fg="#083B66",
+        )
+        title.pack(pady=(12, 0))
+
+        subtitle = tk.Label(
+            header,
+            text="Escolha uma opção para ouvir suas músicas!",
+            font=("Arial", 14, "bold"),
+            bg="#CDEBFF",
+            fg="#175A8A",
+        )
+        subtitle.pack(pady=(4, 8))
+
+    def _build_tabs(self) -> None:
+        notebook = ttk.Notebook(self.root)
+        notebook.pack(fill="both", expand=True, padx=16, pady=14)
+
+        self.youtube_tab = tk.Frame(notebook, bg="#F6FBFF")
+        self.cd_tab = tk.Frame(notebook, bg="#F6FBFF")
+
+        notebook.add(self.youtube_tab, text="📺 YouTube")
+        notebook.add(self.cd_tab, text="💿 Copiar CD")
+
+        self._build_youtube_tab()
+        self._build_cd_tab()
+
+    def _build_youtube_tab(self) -> None:
+        container = tk.Frame(self.youtube_tab, bg="#F6FBFF")
+        container.pack(fill="both", expand=True, padx=12, pady=10)
+
+        tk.Label(
+            container,
+            text="1) Escreva o nome da música",
+            font=self.section_font,
+            bg="#F6FBFF",
+            fg="#114B5F",
+        ).pack(anchor="w", pady=(0, 6))
+
+        query_row = tk.Frame(container, bg="#F6FBFF")
+        query_row.pack(fill="x", pady=(0, 12))
+
+        self.youtube_query = tk.Entry(query_row, font=self.text_font)
+        self.youtube_query.pack(side="left", fill="x", expand=True, ipady=8)
+
+        search_btn = tk.Button(
+            query_row,
+            text="🔎 Procurar",
+            font=self.big_btn_font,
+            bg="#00B4D8",
+            fg="white",
+            activebackground="#0096C7",
+            padx=20,
+            pady=8,
+            command=self.search_music,
+        )
+        search_btn.pack(side="left", padx=(10, 0))
+
+        tk.Label(
+            container,
+            text="2) Escolha uma música na lista",
+            font=self.section_font,
+            bg="#F6FBFF",
+            fg="#114B5F",
+        ).pack(anchor="w", pady=(6, 6))
+
+        list_frame = tk.Frame(container, bg="#F6FBFF")
+        list_frame.pack(fill="both", expand=True)
+
+        self.results_list = tk.Listbox(
+            list_frame,
+            font=("Arial", 14),
+            height=10,
+            activestyle="none",
+            selectbackground="#90E0EF",
+            selectforeground="#023E8A",
+        )
+        self.results_list.pack(side="left", fill="both", expand=True)
+
+        scroll = tk.Scrollbar(list_frame, command=self.results_list.yview)
+        scroll.pack(side="right", fill="y")
+        self.results_list.configure(yscrollcommand=scroll.set)
+
+        action_row = tk.Frame(container, bg="#F6FBFF")
+        action_row.pack(fill="x", pady=(12, 8))
+
+        self.youtube_status = tk.Label(
+            action_row,
+            text="3) Clique no botão para baixar",
+            font=("Arial", 13, "bold"),
+            bg="#F6FBFF",
+            fg="#2B9348",
+        )
+        self.youtube_status.pack(side="left")
+
+        download_btn = tk.Button(
+            action_row,
+            text="⬇️ Baixar música",
+            font=self.big_btn_font,
+            bg="#2A9D8F",
+            fg="white",
+            activebackground="#21867A",
+            padx=24,
+            pady=10,
+            command=self.download_selected_music,
+        )
+        download_btn.pack(side="right")
+
+    def _build_cd_tab(self) -> None:
+        container = tk.Frame(self.cd_tab, bg="#F6FBFF")
+        container.pack(fill="both", expand=True, padx=12, pady=10)
+
+        top_row = tk.Frame(container, bg="#F6FBFF")
+        top_row.pack(fill="x")
+
+        tk.Label(
+            top_row,
+            text="1) Encontre seu CD",
+            font=self.section_font,
+            bg="#F6FBFF",
+            fg="#6B4E16",
+        ).pack(side="left")
+
+        scan_btn = tk.Button(
+            top_row,
+            text="💿 Procurar CD",
+            font=self.big_btn_font,
+            bg="#FFB703",
+            fg="#4A2D00",
+            activebackground="#F4A261",
+            padx=20,
+            pady=8,
+            command=self.scan_cd_drives,
+        )
+        scan_btn.pack(side="right")
+
+        drives_row = tk.Frame(container, bg="#F6FBFF")
+        drives_row.pack(fill="both", pady=(8, 12))
+
+        self.drives_list = tk.Listbox(
+            drives_row,
+            font=("Arial", 14),
+            height=4,
+            activestyle="none",
+            selectbackground="#FFE8A3",
+            selectforeground="#523200",
+        )
+        self.drives_list.pack(fill="x")
+
+        preview_row = tk.Frame(container, bg="#F6FBFF")
+        preview_row.pack(fill="x", pady=(0, 8))
+
+        preview_btn = tk.Button(
+            preview_row,
+            text="👀 Mostrar músicas do CD",
+            font=self.big_btn_font,
+            bg="#8ECAE6",
+            fg="#09324C",
+            activebackground="#74B7D6",
+            padx=20,
+            pady=8,
+            command=self.preview_cd,
+        )
+        preview_btn.pack(side="left")
+
+        self.cd_target_label = tk.Label(
+            preview_row,
+            text="Destino: ./downloads/cdX",
+            font=("Arial", 13, "bold"),
+            bg="#F6FBFF",
+            fg="#264653",
+        )
+        self.cd_target_label.pack(side="right")
+
+        tk.Label(
+            container,
+            text="2) Confira a lista antes de copiar",
+            font=self.section_font,
+            bg="#F6FBFF",
+            fg="#6B4E16",
+        ).pack(anchor="w", pady=(4, 6))
+
+        self.cd_preview_text = tk.Text(
+            container,
+            font=("Courier", 12),
+            height=14,
+            wrap="word",
+            bg="#FFFFFF",
+            fg="#333333",
+        )
+        self.cd_preview_text.pack(fill="both", expand=True)
+        self.cd_preview_text.insert("1.0", "Nenhum CD selecionado ainda.\n")
+        self.cd_preview_text.configure(state="disabled")
+
+        copy_row = tk.Frame(container, bg="#F6FBFF")
+        copy_row.pack(fill="x", pady=(10, 6))
+
+        copy_btn = tk.Button(
+            copy_row,
+            text="📥 Copiar para downloads/cdX",
+            font=self.big_btn_font,
+            bg="#E76F51",
+            fg="white",
+            activebackground="#D75A3A",
+            padx=20,
+            pady=10,
+            command=self.start_copy_cd,
+        )
+        copy_btn.pack(side="right")
+
+        self.cd_status = tk.Label(
+            copy_row,
+            text="Quando algum arquivo falhar, vamos tentar no YouTube automaticamente.",
+            font=("Arial", 12, "bold"),
+            bg="#F6FBFF",
+            fg="#8D3B2A",
+        )
+        self.cd_status.pack(side="left")
+
+    def _set_cd_preview_text(self, text: str) -> None:
+        self.cd_preview_text.configure(state="normal")
+        self.cd_preview_text.delete("1.0", tk.END)
+        self.cd_preview_text.insert("1.0", text)
+        self.cd_preview_text.configure(state="disabled")
+
+    def _append_cd_preview_text(self, text: str) -> None:
+        self.cd_preview_text.configure(state="normal")
+        self.cd_preview_text.insert(tk.END, text)
+        self.cd_preview_text.see(tk.END)
+        self.cd_preview_text.configure(state="disabled")
+
+    def search_music(self) -> None:
+        query = self.youtube_query.get().strip()
+        if not query:
+            messagebox.showwarning("Faltou um nome", "Escreva o nome da música primeiro.")
+            return
+
+        self.youtube_status.configure(text="Procurando músicas...", fg="#005F73")
+        self.results_list.delete(0, tk.END)
+
+        def worker() -> None:
+            try:
+                results = search_youtube(query, max_results=8)
+            except Exception as exc:
+                self.root.after(0, lambda: self._on_search_error(exc))
+                return
+
+            self.root.after(0, lambda: self._on_search_success(results))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_search_error(self, exc: Exception) -> None:
+        self.youtube_status.configure(text="Não consegui buscar agora.", fg="#B00020")
+        messagebox.showerror("Erro na busca", f"Não foi possível buscar no YouTube.\n\nDetalhe: {exc}")
+
+    def _on_search_success(self, results: list[dict]) -> None:
+        self.current_results = results
+        self.results_list.delete(0, tk.END)
+
+        if not results:
+            self.youtube_status.configure(text="Não encontrei músicas com esse nome.", fg="#B00020")
+            return
+
+        for idx, item in enumerate(results, start=1):
+            title = item.get("title") or "Sem título"
+            duration = item.get("duration") or 0
+            minutes = int(duration) // 60
+            seconds = int(duration) % 60
+            self.results_list.insert(tk.END, f"{idx:02d}. {title}   ({minutes}:{seconds:02d})")
+
+        self.youtube_status.configure(
+            text="Legal! Agora escolha uma música e clique em 'Baixar música'.",
+            fg="#2B9348",
+        )
+
+    def download_selected_music(self) -> None:
+        selected = self.results_list.curselection()
+        if not selected:
+            messagebox.showwarning("Falta escolher", "Selecione uma música na lista para baixar.")
+            return
+
+        idx = selected[0]
+        item = self.current_results[idx]
+        title = item.get("title") or f"musica_{idx + 1}"
+        url = item.get("url") or item.get("webpage_url")
+        if not url and item.get("id"):
+            url = f"https://www.youtube.com/watch?v={item['id']}"
+
+        if not url:
+            messagebox.showerror("Erro", "Não encontrei o link desse vídeo.")
+            return
+
+        self.youtube_status.configure(text="Baixando música...", fg="#005F73")
+
+        def worker() -> None:
+            try:
+                output_dir = "downloads"
+                mp3_path = download_mp3(url, title, output_dir)
+                self.root.after(0, lambda: self._on_download_done(mp3_path, title))
+            except Exception as exc:
+                self.root.after(0, lambda: self._on_download_error(exc))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_download_done(self, mp3_path: str, title: str) -> None:
+        if os.path.exists(mp3_path):
+            self.youtube_status.configure(text=f"Concluído: {title}", fg="#2B9348")
+            messagebox.showinfo("Concluído", f"Música salva em:\n{mp3_path}")
+        else:
+            self.youtube_status.configure(
+                text="Download terminou, mas o MP3 não apareceu.",
+                fg="#B26A00",
+            )
+            messagebox.showwarning(
+                "Atenção",
+                "Não achei o MP3 final. Verifique se o ffmpeg está instalado.",
+            )
+
+    def _on_download_error(self, exc: Exception) -> None:
+        self.youtube_status.configure(text="Não consegui baixar essa música.", fg="#B00020")
+        messagebox.showerror("Erro no download", f"Falha ao baixar:\n{exc}")
+
+    def scan_cd_drives(self) -> None:
+        drives = find_cd_drives()
+        self.current_drives = drives
+        self.drives_list.delete(0, tk.END)
+
+        if not drives:
+            self.cd_status.configure(text="Não encontrei unidade de CD agora.", fg="#B00020")
+            messagebox.showwarning("Sem CD", "Nenhuma unidade de CD foi encontrada.")
+            return
+
+        for drive in drives:
+            self.drives_list.insert(tk.END, drive)
+
+        self.cd_status.configure(
+            text="Agora selecione a unidade e clique em 'Mostrar músicas do CD'.",
+            fg="#8D3B2A",
+        )
+
+    def preview_cd(self) -> None:
+        selected = self.drives_list.curselection()
+        if not selected:
+            messagebox.showwarning("Escolha uma unidade", "Selecione uma unidade de CD na lista.")
+            return
+
+        drive_path = self.current_drives[selected[0]]
+        self.current_cd_path = drive_path
+
+        mp3_map = find_mp3_files(drive_path)
+        if not mp3_map:
+            self._set_cd_preview_text("Não encontrei arquivos MP3 nesse CD.\n")
+            self.cd_status.configure(text="Esse CD não tem arquivos MP3.", fg="#B00020")
+            return
+
+        next_cd = get_next_cd_number("downloads")
+        self.cd_target_label.configure(text=f"Destino: ./downloads/cd{next_cd}")
+
+        lines = [f"CD selecionado: {drive_path}\n", "Arquivos encontrados:\n"]
+        total = 0
+        for folder, files in sorted(mp3_map.items()):
+            folder_label = "[Raiz]" if folder == "." else folder
+            lines.append(f"\nPasta: {folder_label}\n")
+            for name in sorted(files):
+                lines.append(f"  - {name}\n")
+                total += 1
+
+        lines.append(f"\nTotal: {total} arquivo(s) MP3\n")
+        lines.append("\nSe tudo estiver certo, clique em 'Copiar para downloads/cdX'.\n")
+
+        self._set_cd_preview_text("".join(lines))
+        self.cd_status.configure(text="Prévia pronta. Pode iniciar a cópia.", fg="#2B9348")
+
+    def start_copy_cd(self) -> None:
+        if not self.current_cd_path:
+            messagebox.showwarning("Falta prévia", "Primeiro clique em 'Mostrar músicas do CD'.")
+            return
+
+        confirm = messagebox.askyesno(
+            "Confirmar cópia",
+            "Vamos copiar os arquivos do CD mantendo a mesma estrutura de pastas.\n\nContinuar?",
+        )
+        if not confirm:
+            return
+
+        self.cd_status.configure(text="Copiando... isso pode demorar um pouco.", fg="#005F73")
+
+        def worker() -> None:
+            summary = self.copy_cd_with_fallback_gui(self.current_cd_path)
+            self.root.after(0, lambda: self._on_copy_done(summary))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def copy_cd_with_fallback_gui(self, cd_path: str) -> dict:
+        mp3_map = find_mp3_files(cd_path)
+        if not mp3_map:
+            return {
+                "ok": False,
+                "message": "Não encontrei arquivos MP3 para copiar.",
+            }
+
+        cd_num = get_next_cd_number("downloads")
+        dest_base = os.path.join("downloads", f"cd{cd_num}")
+        os.makedirs(dest_base, exist_ok=True)
+
+        self.root.after(
+            0,
+            lambda: self._append_cd_preview_text(
+                f"\nIniciando cópia para: {dest_base}\n" + "-" * 60 + "\n"
+            ),
+        )
+
+        total = sum(len(files) for files in mp3_map.values())
+        done = 0
+        failed: list[tuple[str, str]] = []
+
+        for rel_folder, files in sorted(mp3_map.items()):
+            if rel_folder == ".":
+                folder_dest = dest_base
+                folder_src = cd_path
+            else:
+                folder_dest = os.path.join(dest_base, rel_folder)
+                folder_src = os.path.join(cd_path, rel_folder)
+
+            os.makedirs(folder_dest, exist_ok=True)
+
+            for filename in sorted(files):
+                done += 1
+                src_file = os.path.join(folder_src, filename)
+                dst_file = os.path.join(folder_dest, filename)
+
+                try:
+                    shutil.copy2(src_file, dst_file)
+                    self.root.after(
+                        0,
+                        lambda d=done, t=total, n=filename: self._append_cd_preview_text(
+                            f"[{d}/{t}] OK   {n}\n"
+                        ),
+                    )
+                except Exception:
+                    failed.append((filename, rel_folder))
+                    self.root.after(
+                        0,
+                        lambda d=done, t=total, n=filename: self._append_cd_preview_text(
+                            f"[{d}/{t}] ERRO {n} -> tentando YouTube depois\n"
+                        ),
+                    )
+
+        downloaded_from_youtube = 0
+        for filename, rel_folder in failed:
+            title = os.path.splitext(filename)[0]
+            folder_dest = dest_base if rel_folder == "." else os.path.join(dest_base, rel_folder)
+            os.makedirs(folder_dest, exist_ok=True)
+
+            self.root.after(
+                0,
+                lambda t=title: self._append_cd_preview_text(
+                    f"Procurando no YouTube: {t}\n"
+                ),
+            )
+
+            try:
+                results = search_youtube(title, max_results=1)
+                if not results:
+                    self.root.after(
+                        0,
+                        lambda t=title: self._append_cd_preview_text(
+                            f"  Sem resultado no YouTube: {t}\n"
+                        ),
+                    )
+                    continue
+
+                top = results[0]
+                url = top.get("url") or top.get("webpage_url")
+                if not url and top.get("id"):
+                    url = f"https://www.youtube.com/watch?v={top['id']}"
+
+                if not url:
+                    self.root.after(
+                        0,
+                        lambda t=title: self._append_cd_preview_text(
+                            f"  Resultado inválido para: {t}\n"
+                        ),
+                    )
+                    continue
+
+                mp3_path = download_mp3(url, title, folder_dest)
+                if os.path.exists(mp3_path):
+                    downloaded_from_youtube += 1
+                    self.root.after(
+                        0,
+                        lambda t=title: self._append_cd_preview_text(
+                            f"  Baixado do YouTube com sucesso: {t}\n"
+                        ),
+                    )
+                else:
+                    self.root.after(
+                        0,
+                        lambda t=title: self._append_cd_preview_text(
+                            f"  Download não gerou MP3: {t}\n"
+                        ),
+                    )
+            except Exception as exc:
+                self.root.after(
+                    0,
+                    lambda t=title, e=exc: self._append_cd_preview_text(
+                        f"  Falha no YouTube para {t}: {e}\n"
+                    ),
+                )
+
+        return {
+            "ok": True,
+            "message": "Processo finalizado.",
+            "dest": dest_base,
+            "total": total,
+            "copied": total - len(failed),
+            "failed": len(failed),
+            "youtube_ok": downloaded_from_youtube,
+        }
+
+    def _on_copy_done(self, summary: dict) -> None:
+        if not summary.get("ok"):
+            self.cd_status.configure(text=summary.get("message", "Falha na cópia."), fg="#B00020")
+            messagebox.showerror("Falha", summary.get("message", "Falha na cópia."))
+            return
+
+        msg = (
+            f"Destino: {summary['dest']}\n"
+            f"Copiados do CD: {summary['copied']}/{summary['total']}\n"
+            f"Falhas na cópia: {summary['failed']}\n"
+            f"Recuperados no YouTube: {summary['youtube_ok']}"
+        )
+        self.cd_status.configure(text="Cópia concluída com sucesso!", fg="#2B9348")
+        self._append_cd_preview_text("\n" + "-" * 60 + "\nConcluído!\n")
+        messagebox.showinfo("Tudo pronto", msg)
+
+
+def main() -> None:
+    root = tk.Tk()
+    IsaacGUIApp(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
