@@ -60,15 +60,16 @@ class AnimatedSpinner:
 
 class Win7ProgressBar(tk.Canvas):
     """Barra de progresso estilo Windows 7 com efeito visual."""
-    def __init__(self, parent, width=600, height=30, **kwargs):
-        super().__init__(parent, width=width, height=height, bg="#F6FBFF", highlightthickness=0, **kwargs)
+    def __init__(self, parent, height=30, **kwargs):
+        super().__init__(parent, height=height, bg="#F6FBFF", highlightthickness=0, **kwargs)
         self._value = 0
         self._max_value = 100
-        self.width = width
         self.height = height
         self.animate_offset = 0
         self.animation_id = None
         self.is_animating = False
+        # Vincular evento de redimensionamento
+        self.bind("<Configure>", self._on_configure)
         self.draw_progress()
 
     def __setitem__(self, key: str, value: float) -> None:
@@ -99,16 +100,21 @@ class Win7ProgressBar(tk.Canvas):
         """Desenha a barra de progresso."""
         self.delete("all")
 
+        # Obter largura dinâmica do Canvas
+        canvas_width = self.winfo_width()
+        if canvas_width <= 1:
+            canvas_width = 600  # Valor padrão se ainda não foi renderizado
+
         # Bordas da barra
         border_color = "#A0A0A0"
-        self.create_rectangle(1, 1, self.width - 1, self.height - 1, outline=border_color, width=1)
+        self.create_rectangle(1, 1, canvas_width - 1, self.height - 1, outline=border_color, width=1)
 
         # Fundo cinzento
-        self.create_rectangle(2, 2, self.width - 2, self.height - 2, fill="#E8E8E8", outline="")
+        self.create_rectangle(2, 2, canvas_width - 2, self.height - 2, fill="#E8E8E8", outline="")
 
         if self._value > 0:
             # Calcular largura preenchida
-            filled_width = (self._value / self._max_value) * (self.width - 4)
+            filled_width = (self._value / self._max_value) * (canvas_width - 4)
 
             # Desenhar barra verde com gradiente (cores do Windows 7)
             # Barra superior (verde mais claro)
@@ -129,6 +135,10 @@ class Win7ProgressBar(tk.Canvas):
             # Linhas com transparência simulada (usando cor mais clara)
             self.create_line(x + 2, 2, x + 2, self.height - 2, fill="#AADDAA", width=2)
             x += stripe_width + stripe_spacing
+
+    def _on_configure(self, event) -> None:
+        """Redesenha quando o canvas é redimensionado."""
+        self.draw_progress()
 
     def start_animation(self) -> None:
         """Inicia a animação da barra."""
@@ -454,10 +464,9 @@ class IsaacGUIApp:
 
         self.cd_progress_bar = Win7ProgressBar(
             self.cd_progress_frame,
-            width=600,
             height=30,
         )
-        self.cd_progress_bar.pack(fill="x", pady=(0, 8))
+        self.cd_progress_bar.pack(fill="x", expand=True, pady=(0, 8))
 
         progress_info = tk.Frame(self.cd_progress_frame, bg="#F6FBFF")
         progress_info.pack(fill="x", pady=(0, 4))
