@@ -521,6 +521,38 @@ class IsaacGUIApp:
         )
         self.cd_cancel_btn.pack(side="right", padx=(10, 0))
 
+        # Botão de "Mais detalhes"
+        details_frame = tk.Frame(self.cd_progress_frame, bg="#F6FBFF")
+        details_frame.pack(fill="x", pady=(8, 0))
+
+        self.cd_details_btn = tk.Button(
+            details_frame,
+            text="▼ Mais detalhes",
+            font=("Arial", 10),
+            bg="#E0E0E0",
+            fg="#333333",
+            activebackground="#D0D0D0",
+            padx=8,
+            pady=4,
+            command=self._toggle_details,
+        )
+        self.cd_details_btn.pack(side="left")
+
+        # Painel de detalhes (expandido)
+        self.cd_details_expanded = False
+        self.cd_details_panel = tk.Frame(self.cd_progress_frame, bg="#F0F0F0", relief="sunken", borderwidth=1)
+
+        self.cd_details_text = tk.Text(
+            self.cd_details_panel,
+            font=("Courier", 10),
+            height=8,
+            wrap="word",
+            bg="#FFFFFF",
+            fg="#333333",
+        )
+        self.cd_details_text.pack(fill="both", expand=True, padx=4, pady=4)
+        self.cd_details_text.configure(state="disabled")
+
         # Inicialmente oculto
         self.cd_progress_frame.pack_forget()
 
@@ -632,6 +664,26 @@ class IsaacGUIApp:
         """Sinaliza para cancelar a cópia em andamento."""
         self.cancel_copy = True
         self.cd_cancel_btn.configure(state="disabled", text="⏹ Cancelando…")
+
+    def _toggle_details(self) -> None:
+        """Expande ou contrai o painel de detalhes."""
+        if self.cd_details_expanded:
+            # Contrair
+            self.cd_details_panel.pack_forget()
+            self.cd_details_btn.configure(text="▼ Mais detalhes")
+            self.cd_details_expanded = False
+        else:
+            # Expandir
+            self.cd_details_panel.pack(fill="both", expand=True, pady=(0, 8))
+            self.cd_details_btn.configure(text="▲ Menos detalhes")
+            self.cd_details_expanded = True
+
+    def _update_details_log(self, message: str) -> None:
+        """Adiciona uma mensagem ao log de detalhes."""
+        self.cd_details_text.configure(state="normal")
+        self.cd_details_text.insert(tk.END, message + "\n")
+        self.cd_details_text.see(tk.END)
+        self.cd_details_text.configure(state="disabled")
 
     def _set_cd_preview_text(self, text: str) -> None:
         self.cd_preview_text.configure(state="normal")
@@ -827,6 +879,12 @@ class IsaacGUIApp:
         self.root.after(0, lambda: self._show_progress_bar(total))
         self.root.after(0, lambda: self._animate_spinner())  # Iniciar animação do spinner
 
+        # Limpar detalhes e adicionar cabeçalho
+        self.cd_details_text.configure(state="normal")
+        self.cd_details_text.delete("1.0", tk.END)
+        self.cd_details_text.insert("1.0", f"Processando {total} arquivo(s)...\n{'─'*50}\n")
+        self.cd_details_text.configure(state="disabled")
+
         done = 0
         success = 0
         failed = []
@@ -861,6 +919,7 @@ class IsaacGUIApp:
                         0,
                         lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
                     )
+                    self.root.after(0, lambda n=filename: self._update_details_log(f"✔ CD: {n}"))
                     copied = True
                 except Exception:
                     # Se falhar, tenta YouTube imediatamente
@@ -880,6 +939,7 @@ class IsaacGUIApp:
                                         0,
                                         lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
                                     )
+                                    self.root.after(0, lambda n=filename: self._update_details_log(f"🎵 YouTube: {n}"))
                                     copied = True
                     except Exception:
                         pass
@@ -889,6 +949,7 @@ class IsaacGUIApp:
                         0,
                         lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
                     )
+                    self.root.after(0, lambda n=filename: self._update_details_log(f"⊘ Falhou: {n}"))
                     failed.append((filename, folder_dest, title))
 
         # Retry com variações de nome para arquivos que falharam
