@@ -15,6 +15,7 @@ import platform
 import shutil
 import sys
 import threading
+import time
 
 try:
     import tkinter as tk
@@ -45,6 +46,18 @@ from cdripper_utils import (
 )
 
 
+class AnimatedSpinner:
+    """Spinner animado para mostrar progresso durante operações."""
+    def __init__(self):
+        self.frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self.current = 0
+
+    def next(self):
+        frame = self.frames[self.current]
+        self.current = (self.current + 1) % len(self.frames)
+        return frame
+
+
 class IsaacGUIApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -56,6 +69,9 @@ class IsaacGUIApp:
         self.current_results: list[dict] = []
         self.current_drives: list[str] = []
         self.current_cd_path: str | None = None
+        self.cancel_copy: bool = False  # Flag para cancelar cópia
+        self.copy_start_time: float = 0  # Tempo de início da cópia
+        self.spinner = AnimatedSpinner()  # Spinner animado
 
         self._build_styles()
         self._build_header()
@@ -328,6 +344,83 @@ class IsaacGUIApp:
         self.cd_preview_text.insert("1.0", "Nenhum CD selecionado ainda.\n")
         self.cd_preview_text.configure(state="disabled")
 
+        # Frame de progresso (oculto por padrão)
+        self.cd_progress_frame = tk.Frame(container, bg="#F6FBFF")
+        self.cd_progress_frame.pack(fill="x", pady=(10, 0))
+
+        self.cd_current_file_label = tk.Label(
+            self.cd_progress_frame,
+            text="",
+            font=("Arial", 14, "bold"),
+            bg="#F6FBFF",
+            fg="#333333",
+        )
+        self.cd_current_file_label.pack(anchor="w", pady=(0, 8))
+
+        self.cd_progress_bar = ttk.Progressbar(
+            self.cd_progress_frame,
+            mode="determinate",
+            length=600,
+            maximum=100,
+        )
+        self.cd_progress_bar.pack(fill="x", pady=(0, 8), ipady=8)
+
+        progress_info = tk.Frame(self.cd_progress_frame, bg="#F6FBFF")
+        progress_info.pack(fill="x", pady=(0, 4))
+
+        self.cd_progress_percent = tk.Label(
+            progress_info,
+            text="0%",
+            font=("Arial", 14, "bold"),
+            bg="#F6FBFF",
+            fg="#264653",
+        )
+        self.cd_progress_percent.pack(side="left")
+
+        self.cd_progress_count = tk.Label(
+            progress_info,
+            text="0/0 arquivos",
+            font=("Arial", 12),
+            bg="#F6FBFF",
+            fg="#666666",
+        )
+        self.cd_progress_count.pack(side="left", padx=(20, 0))
+
+        self.cd_progress_speed = tk.Label(
+            progress_info,
+            text="0 KB/s",
+            font=("Arial", 12),
+            bg="#F6FBFF",
+            fg="#666666",
+        )
+        self.cd_progress_speed.pack(side="left", padx=(20, 0))
+
+        self.cd_progress_eta = tk.Label(
+            progress_info,
+            text="ETA: --",
+            font=("Arial", 12, "bold"),
+            bg="#F6FBFF",
+            fg="#264653",
+        )
+        self.cd_progress_eta.pack(side="right")
+
+        # Botão de cancelar
+        self.cd_cancel_btn = tk.Button(
+            progress_info,
+            text="⛔ Cancelar",
+            font=("Arial", 10, "bold"),
+            bg="#B00020",
+            fg="white",
+            activebackground="#8B0000",
+            padx=12,
+            pady=4,
+            command=self._cancel_copy,
+        )
+        self.cd_cancel_btn.pack(side="right", padx=(10, 0))
+
+        # Inicialmente oculto
+        self.cd_progress_frame.pack_forget()
+
         copy_row = tk.Frame(container, bg="#F6FBFF")
         copy_row.pack(fill="x", pady=(10, 6))
 
@@ -358,6 +451,64 @@ class IsaacGUIApp:
         output_base = self.cd_output_entry.get().strip() or "downloads"
         next_cd = get_next_cd_number(output_base)
         self.cd_target_label.configure(text=f"Destino: ./{output_base}/cd{next_cd}")
+
+    def _show_progress_bar(self, total: int) -> None:
+        """Mostra a barra de progresso e oculta o preview text."""
+        self.cd_preview_text.pack_forget()
+        self.cd_progress_frame.pack(fill="x", pady=(10, 0))
+        self.cd_progress_bar["maximum"] = total
+        self.cd_progress_bar["value"] = 0
+        self.cd_current_file_label.configure(text="Iniciando…")
+        self.cd_progress_percent.configure(text="0%")
+        self.cd_progress_count.configure(text=f"0/{total} arquivos")
+
+    def _hide_progress_bar(self) -> None:
+        """Oculta a barra de progresso e mostra o preview text."""
+        self.cd_progress_frame.pack_forget()
+        self.cd_preview_text.pack(fill="both", expand=True)
+
+    def _update_progress(self, done: int, total: int, filename: str = "") -> None:
+        """Atualiza a barra de progresso com velocidade e ETA."""
+        pct = int((done / total * 100)) if total > 0 else 0
+        self.cd_progress_bar["value"] = done
+
+        # Calcular velocidade e ETA
+        elapsed = time.time() - self.copy_start_time
+        if elapsed > 0 and done > 0:
+            speed_kb_s = (done / elapsed) / 1024 if elapsed > 0 else 0
+            remaining = total - done
+            if speed_kb_s > 0:
+                eta_seconds = remaining / speed_kb_s if speed_kb_s > 0 else 0
+                eta_min = int(eta_seconds // 60)
+                eta_sec = int(eta_seconds % 60)
+                if eta_min > 0:
+                    eta_text = f"ETA: {eta_min}m {eta_sec}s"
+                else:
+                    eta_text = f"ETA: {eta_sec}s"
+            else:
+                eta_text = "ETA: --"
+
+            speed_text = f"{speed_kb_s:.0f} KB/s"
+        else:
+            speed_text = "0 KB/s"
+            eta_text = "ETA: --"
+
+        self.cd_progress_percent.configure(text=f"{pct}%")
+        self.cd_progress_count.configure(text=f"{done}/{total} arquivos")
+        self.cd_progress_speed.configure(text=speed_text)
+        self.cd_progress_eta.configure(text=eta_text)
+
+        if filename:
+            spinner = self.spinner.next()
+            display_name = filename[:45] + "…" if len(filename) > 45 else filename
+            self.cd_current_file_label.configure(text=f"{spinner} Processando: {display_name}")
+
+        self.root.update_idletasks()
+
+    def _cancel_copy(self) -> None:
+        """Sinaliza para cancelar a cópia em andamento."""
+        self.cancel_copy = True
+        self.cd_cancel_btn.configure(state="disabled", text="⏹ Cancelando…")
 
     def _set_cd_preview_text(self, text: str) -> None:
         self.cd_preview_text.configure(state="normal")
@@ -544,19 +695,20 @@ class IsaacGUIApp:
         dest_base = os.path.join(output_base, f"cd{cd_num}")
         os.makedirs(dest_base, exist_ok=True)
 
-        self.root.after(
-            0,
-            lambda: self._append_cd_preview_text(
-                f"\nProcessando: {dest_base}\n" + "-" * 60 + "\n"
-            ),
-        )
-
         total = sum(len(files) for files in mp3_map.values())
+
+        # Mostrar progress frame e ocultar preview text
+        self.cancel_copy = False  # Resetar flag de cancelamento
+        self.copy_start_time = time.time()  # Registrar tempo de início
+        self.root.after(0, lambda: self._show_progress_bar(total))
+
         done = 0
         success = 0
         failed = []
 
         for rel_folder, files in sorted(mp3_map.items()):
+            if self.cancel_copy:
+                break
             if rel_folder == ".":
                 folder_dest = dest_base
                 folder_src = cd_path
@@ -567,6 +719,9 @@ class IsaacGUIApp:
             os.makedirs(folder_dest, exist_ok=True)
 
             for filename in sorted(files):
+                if self.cancel_copy:
+                    break
+
                 done += 1
                 src_file = os.path.join(folder_src, filename)
                 dst_file = os.path.join(folder_dest, filename)
@@ -579,9 +734,7 @@ class IsaacGUIApp:
                     success += 1
                     self.root.after(
                         0,
-                        lambda d=done, t=total, n=filename: self._append_cd_preview_text(
-                            f"[{d}/{t}] ✔  {n}\n"
-                        ),
+                        lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
                     )
                     copied = True
                 except Exception:
@@ -600,9 +753,7 @@ class IsaacGUIApp:
                                     success += 1
                                     self.root.after(
                                         0,
-                                        lambda d=done, t=total, n=filename: self._append_cd_preview_text(
-                                            f"[{d}/{t}] 🎵 {n}\n"
-                                        ),
+                                        lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
                                     )
                                     copied = True
                     except Exception:
@@ -611,21 +762,12 @@ class IsaacGUIApp:
                 if not copied:
                     self.root.after(
                         0,
-                        lambda d=done, t=total, n=filename: self._append_cd_preview_text(
-                            f"[{d}/{t}] ⊘  {n}\n"
-                        ),
+                        lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
                     )
                     failed.append((filename, folder_dest, title))
 
         # Retry com variações de nome para arquivos que falharam
         if failed:
-            self.root.after(
-                0,
-                lambda: self._append_cd_preview_text(
-                    "-" * 60 + "\nTentando novamente com variações…\n" + "-" * 60 + "\n"
-                ),
-            )
-
             for filename, folder_dest, original_title in failed:
                 variations = get_name_variations(original_title)
 
@@ -642,22 +784,32 @@ class IsaacGUIApp:
                                 mp3_path = download_mp3(url, filename, folder_dest)
                                 if os.path.exists(mp3_path):
                                     success += 1
-                                    self.root.after(
-                                        0,
-                                        lambda fn=filename, vt=var_title: self._append_cd_preview_text(
-                                            f"✔  {fn} ({vt})\n"
-                                        ),
-                                    )
                                     break
                     except Exception:
                         pass
-                else:
-                    self.root.after(
-                        0,
-                        lambda fn=filename: self._append_cd_preview_text(
-                            f"⊘  {fn}\n"
-                        ),
-                    )
+
+        # Mostrar resumo final
+        self.root.after(0, lambda: self._hide_progress_bar())
+
+        if self.cancel_copy:
+            summary_text = f"\n{'─'*60}\n"
+            summary_text += f"⏹ Cópia Cancelada!\n"
+            summary_text += f"{'─'*60}\n"
+            summary_text += f"✔ Sucesso: {success}/{done} arquivos processados\n"
+            summary_text += f"⚠ Não processados: {total - done}/{total} arquivos\n"
+            summary_text += f"Destino: {dest_base}\n"
+            summary_text += f"{'─'*60}\n"
+        else:
+            summary_text = f"\n{'─'*60}\n"
+            summary_text += f"Processamento Concluído!\n"
+            summary_text += f"{'─'*60}\n"
+            summary_text += f"✔ Sucesso: {success}/{total} arquivos\n"
+            summary_text += f"⊘ Não obtidos: {total - success}/{total} arquivos\n"
+            summary_text += f"Destino: {dest_base}\n"
+            summary_text += f"{'─'*60}\n"
+
+        self.root.after(0, lambda: self._set_cd_preview_text(summary_text))
+        self.root.after(0, lambda: self.cd_cancel_btn.configure(state="normal", text="⛔ Cancelar"))
 
         return {
             "ok": True,

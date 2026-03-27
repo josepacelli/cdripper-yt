@@ -56,6 +56,9 @@ def c(text, color):
     return f"{colors.get(color, '')}{text}{Style.RESET_ALL}"
 
 
+import time as time_module
+
+
 class AnimatedSpinner:
     """Spinner animado para mostrar progresso durante operações."""
     def __init__(self):
@@ -79,6 +82,40 @@ def banner():
 def sanitize_filename(name: str) -> str:
     """Remove caracteres inválidos para nomes de arquivo."""
     return re.sub(r'[\\/*?:"<>|]', "", name).strip()
+
+
+def show_progress(done: int, total: int, filename: str, start_time: float, spinner: AnimatedSpinner) -> None:
+    """Mostra barra de progresso com velocidade e ETA."""
+    pct = int((done / total * 100)) if total > 0 else 0
+    bar_len = 35
+    filled = int(bar_len * pct / 100)
+    bar = "█" * filled + "░" * (bar_len - filled)
+
+    # Calcular velocidade e ETA
+    elapsed = time_module.time() - start_time
+    if elapsed > 0 and done > 0:
+        speed_kb_s = (done / elapsed) / 1024 if elapsed > 0 else 0
+        remaining = total - done
+        if speed_kb_s > 0:
+            eta_seconds = remaining / speed_kb_s if speed_kb_s > 0 else 0
+            eta_min = int(eta_seconds // 60)
+            eta_sec = int(eta_seconds % 60)
+            if eta_min > 0:
+                eta_text = f"ETA: {eta_min}m {eta_sec}s"
+            else:
+                eta_text = f"ETA: {eta_sec}s"
+        else:
+            eta_text = "ETA: --"
+        speed_text = f"{speed_kb_s:.0f} KB/s"
+    else:
+        speed_text = "0 KB/s"
+        eta_text = "ETA: --"
+
+    spinner_frame = spinner.next()
+    display_name = filename[:40] + "…" if len(filename) > 40 else filename
+
+    print(f"\r  {spinner_frame} {c(bar, 'green')} {c(f'{pct:3d}%', 'yellow')} "
+          f"| {done}/{total} | {c(speed_text, 'cyan')} | {c(eta_text, 'blue')}", end="", flush=True)
 
 
 def get_name_variations(title: str) -> list[str]:
@@ -229,6 +266,12 @@ def find_cd_drives() -> list[str]:
                 full_path = os.path.join(volumes_path, item)
                 if os.path.isdir(full_path) and item not in ("Macintosh HD", "Data"):
                     drives.append(full_path)
+
+        # Adicionar pasta iCloud do usuário
+        home_dir = os.path.expanduser("~")
+        icloud_path = os.path.join(home_dir, "Library/Mobile Documents")
+        if os.path.exists(icloud_path):
+            drives.append(icloud_path)
     elif platform.system() == "Windows":
         import string
         for drive in string.ascii_uppercase:
@@ -312,6 +355,7 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
     processed = 0
     failed = []  # Lista de arquivos que falharam
     spinner = AnimatedSpinner()
+    start_time = time_module.time()
 
     for folderRelPath, files in sorted(mp3_dict.items()):
         # Criar pasta de destino
@@ -330,35 +374,29 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
             # Tentar copiar do CD
             copied = False
             try:
-                # Mostrar spinner durante a cópia
-                print(f"  [{processed:3d}/{total:3d}] {file}… {c(spinner.next(), 'cyan')}", end="", flush=True)
+                show_progress(processed, total, file, start_time, spinner)
                 shutil.copy2(src_file, dst_file)
-                file_size = os.path.getsize(dst_file) / (1024 * 1024)
-                print(c(f"\b✔ ({file_size:.1f} MB)", "green"))
+                print(c(" ✔", "green"))
                 copied = True
             except Exception:
                 # Se falhar, tenta YouTube imediatamente
                 title = os.path.splitext(file)[0]
                 try:
-                    # Mostrar spinner durante a busca no YouTube
-                    print(c(spinner.next(), "cyan"), end="", flush=True)
                     results = search_youtube(title, max_results=1)
                     if results:
                         url = results[0].get("url") or results[0].get("webpage_url") or \
                               f"https://www.youtube.com/watch?v={results[0]['id']}"
 
-                        print(c("🎵 ", "yellow"), end="", flush=True)
                         mp3_path = download_mp3(url, file, dest_folder)
 
                         if os.path.exists(mp3_path):
-                            file_size = os.path.getsize(mp3_path) / (1024 * 1024)
-                            print(c(f"✔ ({file_size:.1f} MB)", "green"))
+                            print(c(" ✔", "green"))
                             copied = True
                 except Exception:
                     pass
 
                 if not copied:
-                    print(c("⊘ ", "yellow"))
+                    print(c(" ⊘", "yellow"))
                     failed.append((file, dest_folder, title))
 
     # Retry com variações de nome para arquivos que falharam
@@ -382,14 +420,13 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
                         mp3_path = download_mp3(url, file, dest_folder)
 
                         if os.path.exists(mp3_path):
-                            file_size = os.path.getsize(mp3_path) / (1024 * 1024)
-                            print(c(f"\b✔ ({file_size:.1f} MB)", "green"))
+                            print(c(" ✔", "green"))
                             break
                 except Exception:
                     pass
             else:
                 # Se nenhuma variação funcionou
-                print(c("⊘", "yellow"))
+                print(c(" ⊘", "yellow"))
 
     print(c(f"\n  {'─'*60}", "blue"))
     print(c(f"  ✔ Processamento concluído!", "green"))

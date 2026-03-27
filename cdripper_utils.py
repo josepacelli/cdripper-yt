@@ -118,6 +118,12 @@ def find_cd_drives() -> list[str]:
                 full_path = os.path.join(volumes_path, item)
                 if os.path.isdir(full_path) and item not in ("Macintosh HD", "Data"):
                     drives.append(full_path)
+
+        # Adicionar pasta iCloud do usuário
+        home_dir = os.path.expanduser("~")
+        icloud_path = os.path.join(home_dir, "Library/Mobile Documents")
+        if os.path.exists(icloud_path):
+            drives.append(icloud_path)
     elif platform.system() == "Windows":
         import string
         for drive in string.ascii_uppercase:
