@@ -402,7 +402,7 @@ class IsaacGUIApp:
             bg="#F6FBFF",
             fg="#264653",
         )
-        self.cd_progress_eta.pack(side="right")
+        self.cd_progress_eta.pack(side="left", padx=(20, 0))
 
         # Botão de cancelar
         self.cd_cancel_btn = tk.Button(
