@@ -72,6 +72,8 @@ class IsaacGUIApp:
         self.cancel_copy: bool = False  # Flag para cancelar cópia
         self.copy_start_time: float = 0  # Tempo de início da cópia
         self.spinner = AnimatedSpinner()  # Spinner animado
+        self.copying_in_progress: bool = False  # Flag para indicar cópia em andamento
+        self.spinner_animation_id: str | None = None  # ID do agendamento de animação
 
         self._build_styles()
         self._build_header()
@@ -505,6 +507,24 @@ class IsaacGUIApp:
 
         self.root.update_idletasks()
 
+    def _animate_spinner(self) -> None:
+        """Anima continuamente o spinner enquanto cópia está em andamento."""
+        if not self.copying_in_progress:
+            return
+
+        # Atualizar apenas o spinner sem alterar outros dados
+        spinner_frame = self.spinner.next()
+        if self.cd_current_file_label.cget("text"):
+            current_text = self.cd_current_file_label.cget("text")
+            # Remover spinner antigo e adicionar novo
+            if " Processando:" in current_text:
+                filename_part = current_text.split(" Processando:", 1)[1].strip()
+                display_name = filename_part[:45] + "…" if len(filename_part) > 45 else filename_part
+                self.cd_current_file_label.configure(text=f"{spinner_frame} Processando: {display_name}")
+
+        # Agendar próxima animação em 100ms
+        self.spinner_animation_id = self.root.after(100, self._animate_spinner)
+
     def _cancel_copy(self) -> None:
         """Sinaliza para cancelar a cópia em andamento."""
         self.cancel_copy = True
@@ -699,8 +719,10 @@ class IsaacGUIApp:
 
         # Mostrar progress frame e ocultar preview text
         self.cancel_copy = False  # Resetar flag de cancelamento
+        self.copying_in_progress = True  # Iniciar animação
         self.copy_start_time = time.time()  # Registrar tempo de início
         self.root.after(0, lambda: self._show_progress_bar(total))
+        self.root.after(0, lambda: self._animate_spinner())  # Iniciar animação do spinner
 
         done = 0
         success = 0
@@ -787,6 +809,12 @@ class IsaacGUIApp:
                                     break
                     except Exception:
                         pass
+
+        # Parar animação do spinner
+        self.copying_in_progress = False
+        if self.spinner_animation_id:
+            self.root.after_cancel(self.spinner_animation_id)
+            self.spinner_animation_id = None
 
         # Mostrar resumo final
         self.root.after(0, lambda: self._hide_progress_bar())
