@@ -58,6 +58,99 @@ class AnimatedSpinner:
         return frame
 
 
+class Win7ProgressBar(tk.Canvas):
+    """Barra de progresso estilo Windows 7 com efeito visual."""
+    def __init__(self, parent, width=600, height=30, **kwargs):
+        super().__init__(parent, width=width, height=height, bg="#F6FBFF", highlightthickness=0, **kwargs)
+        self._value = 0
+        self._max_value = 100
+        self.width = width
+        self.height = height
+        self.animate_offset = 0
+        self.animation_id = None
+        self.is_animating = False
+        self.draw_progress()
+
+    def __setitem__(self, key: str, value: float) -> None:
+        """Suporta interface de dicionário para compatibilidade com ttk.Progressbar."""
+        if key == "value":
+            self._value = max(0, min(value, self._max_value))
+            self.draw_progress()
+        elif key == "maximum":
+            self._max_value = max(1, value)
+
+    def __getitem__(self, key: str) -> float:
+        """Suporta leitura via interface de dicionário."""
+        if key == "value":
+            return self._value
+        elif key == "maximum":
+            return self._max_value
+        return 0
+
+    def set_value(self, value: float) -> None:
+        """Atualiza o valor da barra."""
+        self["value"] = value
+
+    def set_max(self, max_value: float) -> None:
+        """Define o valor máximo."""
+        self["maximum"] = max_value
+
+    def draw_progress(self) -> None:
+        """Desenha a barra de progresso."""
+        self.delete("all")
+
+        # Bordas da barra
+        border_color = "#A0A0A0"
+        self.create_rectangle(1, 1, self.width - 1, self.height - 1, outline=border_color, width=1)
+
+        # Fundo cinzento
+        self.create_rectangle(2, 2, self.width - 2, self.height - 2, fill="#E8E8E8", outline="")
+
+        if self._value > 0:
+            # Calcular largura preenchida
+            filled_width = (self._value / self._max_value) * (self.width - 4)
+
+            # Desenhar barra verde com gradiente (cores do Windows 7)
+            # Barra superior (verde mais claro)
+            self.create_rectangle(2, 2, filled_width + 2, self.height // 2, fill="#77CC77", outline="")
+            # Barra inferior (verde mais escuro)
+            self.create_rectangle(2, self.height // 2, filled_width + 2, self.height - 2, fill="#5DAA5D", outline="")
+
+            # Desenhar padrão de linhas animadas (efeito onda)
+            self.draw_stripe_pattern(filled_width)
+
+    def draw_stripe_pattern(self, filled_width: float) -> None:
+        """Desenha o padrão de linhas animadas."""
+        stripe_width = 20
+        stripe_spacing = 5
+        x = self.animate_offset % (stripe_width + stripe_spacing)
+
+        while x < filled_width:
+            # Linhas com transparência simulada (usando cor mais clara)
+            self.create_line(x + 2, 2, x + 2, self.height - 2, fill="#AADDAA", width=2)
+            x += stripe_width + stripe_spacing
+
+    def start_animation(self) -> None:
+        """Inicia a animação da barra."""
+        if not self.is_animating:
+            self.is_animating = True
+            self._animate()
+
+    def stop_animation(self) -> None:
+        """Para a animação da barra."""
+        self.is_animating = False
+        if self.animation_id:
+            self.after_cancel(self.animation_id)
+            self.animation_id = None
+
+    def _animate(self) -> None:
+        """Anima o padrão de linhas."""
+        if self.is_animating:
+            self.animate_offset += 2
+            self.draw_progress()
+            self.animation_id = self.after(50, self._animate)
+
+
 class IsaacGUIApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -359,13 +452,12 @@ class IsaacGUIApp:
         )
         self.cd_current_file_label.pack(anchor="w", pady=(0, 8))
 
-        self.cd_progress_bar = ttk.Progressbar(
+        self.cd_progress_bar = Win7ProgressBar(
             self.cd_progress_frame,
-            mode="determinate",
-            length=600,
-            maximum=100,
+            width=600,
+            height=30,
         )
-        self.cd_progress_bar.pack(fill="x", pady=(0, 8), ipady=8)
+        self.cd_progress_bar.pack(fill="x", pady=(0, 8))
 
         progress_info = tk.Frame(self.cd_progress_frame, bg="#F6FBFF")
         progress_info.pack(fill="x", pady=(0, 4))
@@ -460,12 +552,14 @@ class IsaacGUIApp:
         self.cd_progress_frame.pack(fill="x", pady=(10, 0))
         self.cd_progress_bar["maximum"] = total
         self.cd_progress_bar["value"] = 0
+        self.cd_progress_bar.start_animation()  # Iniciar animação da barra
         self.cd_current_file_label.configure(text="Iniciando…")
         self.cd_progress_percent.configure(text="0%")
         self.cd_progress_count.configure(text=f"0/{total} arquivos")
 
     def _hide_progress_bar(self) -> None:
         """Oculta a barra de progresso e mostra o preview text."""
+        self.cd_progress_bar.stop_animation()  # Parar animação da barra
         self.cd_progress_frame.pack_forget()
         self.cd_preview_text.pack(fill="both", expand=True)
 
