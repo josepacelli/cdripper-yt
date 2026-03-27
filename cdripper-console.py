@@ -511,8 +511,13 @@ def main_cd():
     confirm = input(c("  Deseja copiar estes arquivos? [S/n]: ", "cyan")).strip().lower()
     if confirm in ("n", "não", "nao", "no"):
         return
-    
-    copy_cd_with_fallback(selected_drive)
+
+    # Escolher pasta de destino
+    output_dir = input(
+        f"  Pasta de destino {c('[downloads]', 'cyan')}: "
+    ).strip() or "downloads"
+
+    copy_cd_with_fallback(selected_drive, output_dir)
     print(c("\n  ✔ Processo concluído!", "green"))
 
 

@@ -75,6 +75,14 @@ python3 cdripper-console.py
 python3 cdripper-gui.py
 ```
 
+## User Features
+
+### Folder Selection
+Both console and GUI versions allow users to choose where files are saved:
+- **Console**: Prompts before each operation (YouTube search or CD copy)
+- **GUI**: Input field in each tab showing default "downloads" but allowing custom paths
+- Both support relative or absolute paths; default is "downloads" in current directory
+
 ### Building
 ```bash
 # Automatic platform-based build

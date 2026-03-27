@@ -168,6 +168,28 @@ class IsaacGUIApp:
         scroll.pack(side="right", fill="y")
         self.results_list.configure(yscrollcommand=scroll.set)
 
+        # Input para pasta de destino (YouTube)
+        path_frame_yt = tk.Frame(container, bg="#F6FBFF")
+        path_frame_yt.pack(fill="x", pady=(8, 0))
+
+        tk.Label(
+            path_frame_yt,
+            text="Pasta de destino:",
+            font=("Arial", 12, "bold"),
+            bg="#F6FBFF",
+            fg="#114B5F",
+        ).pack(side="left", padx=(0, 8))
+
+        self.youtube_output_entry = tk.Entry(
+            path_frame_yt,
+            font=("Arial", 12),
+            bg="white",
+            fg="#333333",
+            width=20,
+        )
+        self.youtube_output_entry.pack(side="left")
+        self.youtube_output_entry.insert(0, "downloads")
+
         action_row = tk.Frame(container, bg="#F6FBFF")
         action_row.pack(fill="x", pady=(12, 8))
 
@@ -250,14 +272,41 @@ class IsaacGUIApp:
         )
         preview_btn.pack(side="left")
 
+        # Input para pasta de destino
+        path_frame = tk.Frame(preview_row, bg="#F6FBFF")
+        path_frame.pack(side="right", fill="x", expand=False, padx=(10, 0))
+
+        tk.Label(
+            path_frame,
+            text="Pasta:",
+            font=("Arial", 12, "bold"),
+            bg="#F6FBFF",
+            fg="#264653",
+        ).pack(side="left", padx=(0, 8))
+
+        self.cd_output_entry = tk.Entry(
+            path_frame,
+            font=("Arial", 12),
+            bg="white",
+            fg="#333333",
+            width=20,
+        )
+        self.cd_output_entry.pack(side="left")
+        self.cd_output_entry.insert(0, "downloads")
+        # Atualizar label quando o usuário digita
+        self.cd_output_entry.bind("<KeyRelease>", lambda e: self._update_cd_target_label())
+
         self.cd_target_label = tk.Label(
             preview_row,
-            text="Destino: ./downloads/cdX",
+            text="",
             font=("Arial", 13, "bold"),
             bg="#F6FBFF",
             fg="#264653",
         )
-        self.cd_target_label.pack(side="right")
+        self.cd_target_label.pack(side="right", padx=(10, 0))
+
+        # Inicializar label com o valor padrão
+        self._update_cd_target_label()
 
         tk.Label(
             container,
@@ -303,6 +352,12 @@ class IsaacGUIApp:
             fg="#8D3B2A",
         )
         self.cd_status.pack(side="left")
+
+    def _update_cd_target_label(self) -> None:
+        """Atualiza o label de destino quando a pasta é alterada."""
+        output_base = self.cd_output_entry.get().strip() or "downloads"
+        next_cd = get_next_cd_number(output_base)
+        self.cd_target_label.configure(text=f"Destino: ./{output_base}/cd{next_cd}")
 
     def _set_cd_preview_text(self, text: str) -> None:
         self.cd_preview_text.configure(state="normal")
@@ -381,7 +436,7 @@ class IsaacGUIApp:
 
         def worker() -> None:
             try:
-                output_dir = "downloads"
+                output_dir = self.youtube_output_entry.get().strip() or "downloads"
                 mp3_path = download_mp3(url, title, output_dir)
                 self.root.after(0, lambda: self._on_download_done(mp3_path, title))
             except Exception as exc:
@@ -440,9 +495,6 @@ class IsaacGUIApp:
             self.cd_status.configure(text="Esse CD não tem arquivos MP3.", fg="#B00020")
             return
 
-        next_cd = get_next_cd_number("downloads")
-        self.cd_target_label.configure(text=f"Destino: ./downloads/cd{next_cd}")
-
         lines = [f"CD selecionado: {drive_path}\n", "Arquivos encontrados:\n"]
         total = 0
         for folder, files in sorted(mp3_map.items()):
@@ -472,13 +524,15 @@ class IsaacGUIApp:
 
         self.cd_status.configure(text="Copiando... isso pode demorar um pouco.", fg="#005F73")
 
+        output_base = self.cd_output_entry.get().strip() or "downloads"
+
         def worker() -> None:
-            summary = self.copy_cd_with_fallback_gui(self.current_cd_path)
+            summary = self.copy_cd_with_fallback_gui(self.current_cd_path, output_base)
             self.root.after(0, lambda: self._on_copy_done(summary))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def copy_cd_with_fallback_gui(self, cd_path: str) -> dict:
+    def copy_cd_with_fallback_gui(self, cd_path: str, output_base: str = "downloads") -> dict:
         mp3_map = find_mp3_files(cd_path)
         if not mp3_map:
             return {
@@ -486,8 +540,8 @@ class IsaacGUIApp:
                 "message": "Não encontrei arquivos MP3 para copiar.",
             }
 
-        cd_num = get_next_cd_number("downloads")
-        dest_base = os.path.join("downloads", f"cd{cd_num}")
+        cd_num = get_next_cd_number(output_base)
+        dest_base = os.path.join(output_base, f"cd{cd_num}")
         os.makedirs(dest_base, exist_ok=True)
 
         self.root.after(
