@@ -138,3 +138,39 @@ def get_next_cd_number(base_dir: str = "downloads") -> int:
                 num = int(item.lstrip("cd"))
                 max_num = max(max_num, num)
     return max_num + 1
+
+
+def get_name_variations(title: str) -> list[str]:
+    """Gera variações do nome para tentar buscar no YouTube."""
+    variations = [title]
+
+    # Remove números no final (ex: "musica 1" -> "musica")
+    without_numbers = re.sub(r'\s*\d+\s*$', '', title).strip()
+    if without_numbers and without_numbers != title:
+        variations.append(without_numbers)
+
+    # Remove parênteses e conteúdo (ex: "musica (remix)" -> "musica")
+    without_parens = re.sub(r'\s*\([^)]*\)\s*', ' ', title).strip()
+    if without_parens and without_parens != title:
+        variations.append(without_parens)
+
+    # Remove colchetes e conteúdo (ex: "musica [remix]" -> "musica")
+    without_brackets = re.sub(r'\s*\[[^\]]*\]\s*', ' ', title).strip()
+    if without_brackets and without_brackets != title:
+        variations.append(without_brackets)
+
+    # Apenas as primeiras 2-3 palavras (ex: "musica artista remix" -> "musica artista")
+    words = title.split()
+    if len(words) > 2:
+        variations.append(" ".join(words[:2]))
+        variations.append(" ".join(words[:3]))
+
+    # Remove duplicatas mantendo ordem
+    seen = set()
+    unique_variations = []
+    for v in variations:
+        if v and v not in seen:
+            seen.add(v)
+            unique_variations.append(v)
+
+    return unique_variations

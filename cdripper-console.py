@@ -69,6 +69,42 @@ def sanitize_filename(name: str) -> str:
     return re.sub(r'[\\/*?:"<>|]', "", name).strip()
 
 
+def get_name_variations(title: str) -> list[str]:
+    """Gera variações do nome para tentar buscar no YouTube."""
+    variations = [title]
+
+    # Remove números no final (ex: "musica 1" -> "musica")
+    without_numbers = re.sub(r'\s*\d+\s*$', '', title).strip()
+    if without_numbers and without_numbers != title:
+        variations.append(without_numbers)
+
+    # Remove parênteses e conteúdo (ex: "musica (remix)" -> "musica")
+    without_parens = re.sub(r'\s*\([^)]*\)\s*', ' ', title).strip()
+    if without_parens and without_parens != title:
+        variations.append(without_parens)
+
+    # Remove colchetes e conteúdo (ex: "musica [remix]" -> "musica")
+    without_brackets = re.sub(r'\s*\[[^\]]*\]\s*', ' ', title).strip()
+    if without_brackets and without_brackets != title:
+        variations.append(without_brackets)
+
+    # Apenas as primeiras 2-3 palavras (ex: "musica artista remix" -> "musica artista")
+    words = title.split()
+    if len(words) > 2:
+        variations.append(" ".join(words[:2]))
+        variations.append(" ".join(words[:3]))
+
+    # Remove duplicatas mantendo ordem
+    seen = set()
+    unique_variations = []
+    for v in variations:
+        if v and v not in seen:
+            seen.add(v)
+            unique_variations.append(v)
+
+    return unique_variations
+
+
 def get_choice(prompt: str, min_val: int, max_val: int) -> int | None:
     """Obtém entrada do usuário com validação."""
     raw = input(prompt).strip()
@@ -209,7 +245,7 @@ def display_cd_contents(cd_path: str) -> dict:
     mp3_dict = find_mp3_files(cd_path)
     
     if not mp3_dict:
-        print(c("  ✖ Nenhum arquivo MP3 encontrado neste CD.", "red"))
+        print(c("  Nenhum arquivo MP3 encontrado neste CD.", "yellow"))
         return {}
     
     print(c(f"\n{'─'*70}", "blue"))
@@ -243,87 +279,101 @@ def get_next_cd_number(base_dir: str = "downloads") -> int:
 
 
 def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
-    """Copia arquivos do CD para ./downloads/cdX, com fallback para YouTube."""
+    """Copia arquivos do CD para ./downloads/cdX, com fallback para YouTube com retry de variações."""
     mp3_dict = find_mp3_files(cd_path)
-    
+
     if not mp3_dict:
-        print(c("  ✖ Nenhum arquivo MP3 encontrado.", "red"))
+        print(c("  Nenhum arquivo MP3 encontrado.", "yellow"))
         return
-    
+
     cd_num = get_next_cd_number(output_base)
     cd_output = os.path.join(output_base, f"cd{cd_num}")
-    
-    print(c(f"\n  Copiando para: {cd_output}", "cyan"))
+
+    print(c(f"\n  Processando: {cd_output}", "cyan"))
     print(c(f"  {'─'*60}", "blue"))
-    
+
     total = sum(len(files) for files in mp3_dict.values())
-    copied = 0
-    failed = []
-    
+    processed = 0
+    failed = []  # Lista de arquivos que falharam
+
     for folderRelPath, files in sorted(mp3_dict.items()):
         # Criar pasta de destino
         if folderRelPath == ".":
             dest_folder = cd_output
         else:
             dest_folder = os.path.join(cd_output, folderRelPath)
-        
+
         os.makedirs(dest_folder, exist_ok=True)
-        
+
         for file in sorted(files):
-            copied += 1
+            processed += 1
             src_file = os.path.join(cd_path, folderRelPath, file) if folderRelPath != "." else os.path.join(cd_path, file)
             dst_file = os.path.join(dest_folder, file)
-            
-            print(f"  [{copied:3d}/{total:3d}] {file}… ", end="", flush=True)
-            
+
+            print(f"  [{processed:3d}/{total:3d}] {file}… ", end="", flush=True)
+
+            # Tentar copiar do CD
+            copied = False
             try:
                 shutil.copy2(src_file, dst_file)
                 file_size = os.path.getsize(dst_file) / (1024 * 1024)
                 print(c(f"✔ ({file_size:.1f} MB)", "green"))
-            except Exception as e:
-                print(c(f"✖ Erro: {str(e)[:40]}", "red"))
-                failed.append((file, folderRelPath))
-    
-    print(c(f"\n  {'─'*60}", "blue"))
-    print(c(f"  ✔ Cópia concluída: {copied - len(failed)}/{total} arquivos", "green"))
-    
-    # Fallback para YouTube
+                copied = True
+            except Exception:
+                # Se falhar, tenta YouTube imediatamente
+                title = os.path.splitext(file)[0]
+                try:
+                    results = search_youtube(title, max_results=1)
+                    if results:
+                        url = results[0].get("url") or results[0].get("webpage_url") or \
+                              f"https://www.youtube.com/watch?v={results[0]['id']}"
+
+                        print(c("🎵 ", "yellow"), end="", flush=True)
+                        mp3_path = download_mp3(url, file, dest_folder)
+
+                        if os.path.exists(mp3_path):
+                            file_size = os.path.getsize(mp3_path) / (1024 * 1024)
+                            print(c(f"✔ ({file_size:.1f} MB)", "green"))
+                            copied = True
+                except Exception:
+                    pass
+
+                if not copied:
+                    print(c("⊘ ", "yellow"))
+                    failed.append((file, dest_folder, title))
+
+    # Retry com variações de nome para arquivos que falharam
     if failed:
-        print(c(f"\n  ⚠ {len(failed)} arquivo(s) falharam. Tentando YouTube…", "yellow"))
-        print(c(f"  {'─'*60}", "blue"))
-        
-        for file, folder in failed:
-            title = os.path.splitext(file)[0]
-            
-            if folder == ".":
-                dest_folder = cd_output
-            else:
-                dest_folder = os.path.join(cd_output, folder)
-            
-            os.makedirs(dest_folder, exist_ok=True)
-            dst_file = os.path.join(dest_folder, file)
-            
-            print(f"\n  🎵 Procurando no YouTube: {title}")
-            try:
-                results = search_youtube(title, max_results=1)
-                if results:
-                    url = results[0].get("url") or results[0].get("webpage_url") or \
-                          f"https://www.youtube.com/watch?v={results[0]['id']}"
-                    
-                    print(c(f"     Baixando: {results[0].get('title', title)}", "cyan"))
-                    mp3_path = download_mp3(url, file, dest_folder)
-                    
-                    if os.path.exists(mp3_path):
-                        file_size = os.path.getsize(mp3_path) / (1024 * 1024)
-                        print(c(f"     ✔ Salvo com sucesso ({file_size:.1f} MB)", "green"))
-                    else:
-                        print(c(f"     ⚠ Arquivo não encontrado após download", "yellow"))
-                else:
-                    print(c(f"     ✖ Nenhum resultado no YouTube", "red"))
-            except Exception as e:
-                print(c(f"     ✖ Erro: {str(e)}", "red"))
-        
         print(c(f"\n  {'─'*60}", "blue"))
+        print(c(f"  Tentando novamente com variações…", "cyan"))
+        print(c(f"  {'─'*60}", "blue"))
+
+        for file, dest_folder, original_title in failed:
+            variations = get_name_variations(original_title)
+
+            for var_title in variations[1:]:  # Pular a primeira que já foi tentada
+                print(f"  Retentando: {file} ({var_title})… ", end="", flush=True)
+
+                try:
+                    results = search_youtube(var_title, max_results=1)
+                    if results:
+                        url = results[0].get("url") or results[0].get("webpage_url") or \
+                              f"https://www.youtube.com/watch?v={results[0]['id']}"
+
+                        mp3_path = download_mp3(url, file, dest_folder)
+
+                        if os.path.exists(mp3_path):
+                            file_size = os.path.getsize(mp3_path) / (1024 * 1024)
+                            print(c(f"✔ ({file_size:.1f} MB)", "green"))
+                            break
+                except Exception:
+                    pass
+            else:
+                # Se nenhuma variação funcionou
+                print(c("⊘ ", "yellow"))
+
+    print(c(f"\n  {'─'*60}", "blue"))
+    print(c(f"  ✔ Processamento concluído!", "green"))
 
 
 
@@ -358,12 +408,10 @@ def main_youtube():
         print(c(f'\n  Buscando: "{query}"…', "cyan"))
         try:
             results = search_youtube(query)
-        except Exception as e:
-            print(c(f"\n  ✖ Erro na busca: {e}", "red"))
+        except Exception:
             continue
 
         if not results:
-            print(c("  ✖ Nenhum resultado encontrado.", "red"))
             continue
 
         display_results(results)
@@ -395,14 +443,8 @@ def main_youtube():
             if os.path.exists(mp3_path):
                 size_mb = os.path.getsize(mp3_path) / (1024 * 1024)
                 print(c(f"  🎵 Salvo em: {mp3_path}  ({size_mb:.1f} MB)", "green"))
-            else:
-                print(c(
-                    f"  ⚠  Arquivo MP3 não encontrado — verifique se o ffmpeg está instalado.\n"
-                    f"     O áudio pode ter sido salvo em outro formato em '{output_dir}'.",
-                    "yellow"
-                ))
-        except Exception as e:
-            print(c(f"\n  ✖ Erro no download: {e}", "red"))
+        except Exception:
+            pass
 
         # baixar mais?
         again = input(c("\n  Baixar outra música? [S/n]: ", "cyan")).strip().lower()
@@ -414,9 +456,9 @@ def main_cd():
     """Fluxo de cópia de CD."""
     print(c("\n  Procurando unidades de CD…", "cyan"))
     drives = find_cd_drives()
-    
+
     if not drives:
-        print(c("  ✖ Nenhuma unidade de CD encontrada.", "red"))
+        print(c("  Nenhuma unidade de CD encontrada.", "yellow"))
         return
     
     print(c(f"\n  {'─'*50}", "blue"))
@@ -468,8 +510,6 @@ def main():
         elif choice == "0":
             print(c("\n  👋 Até mais!\n", "yellow"))
             break
-        else:
-            print(c("  ⚠ Opção inválida. Tente novamente.", "red"))
 
 
 # ── fluxo principal ───────────────────────────────────────────────────────────

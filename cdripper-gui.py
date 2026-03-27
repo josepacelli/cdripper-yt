@@ -41,6 +41,7 @@ from cdripper_utils import (
     find_mp3_files,
     get_next_cd_number,
     search_youtube,
+    get_name_variations,
 )
 
 
@@ -492,13 +493,14 @@ class IsaacGUIApp:
         self.root.after(
             0,
             lambda: self._append_cd_preview_text(
-                f"\nIniciando cópia para: {dest_base}\n" + "-" * 60 + "\n"
+                f"\nProcessando: {dest_base}\n" + "-" * 60 + "\n"
             ),
         )
 
         total = sum(len(files) for files in mp3_map.values())
         done = 0
-        failed: list[tuple[str, str]] = []
+        success = 0
+        failed = []
 
         for rel_folder, files in sorted(mp3_map.items()):
             if rel_folder == ".":
@@ -514,94 +516,103 @@ class IsaacGUIApp:
                 done += 1
                 src_file = os.path.join(folder_src, filename)
                 dst_file = os.path.join(folder_dest, filename)
+                title = os.path.splitext(filename)[0]
+                copied = False
 
+                # Tentar copiar do CD
                 try:
                     shutil.copy2(src_file, dst_file)
+                    success += 1
                     self.root.after(
                         0,
                         lambda d=done, t=total, n=filename: self._append_cd_preview_text(
-                            f"[{d}/{t}] OK   {n}\n"
+                            f"[{d}/{t}] ✔  {n}\n"
                         ),
                     )
+                    copied = True
                 except Exception:
-                    failed.append((filename, rel_folder))
+                    # Se falhar, tenta YouTube imediatamente
+                    try:
+                        results = search_youtube(title, max_results=1)
+                        if results:
+                            top = results[0]
+                            url = top.get("url") or top.get("webpage_url")
+                            if not url and top.get("id"):
+                                url = f"https://www.youtube.com/watch?v={top['id']}"
+
+                            if url:
+                                mp3_path = download_mp3(url, title, folder_dest)
+                                if os.path.exists(mp3_path):
+                                    success += 1
+                                    self.root.after(
+                                        0,
+                                        lambda d=done, t=total, n=filename: self._append_cd_preview_text(
+                                            f"[{d}/{t}] 🎵 {n}\n"
+                                        ),
+                                    )
+                                    copied = True
+                    except Exception:
+                        pass
+
+                if not copied:
                     self.root.after(
                         0,
                         lambda d=done, t=total, n=filename: self._append_cd_preview_text(
-                            f"[{d}/{t}] ERRO {n} -> tentando YouTube depois\n"
+                            f"[{d}/{t}] ⊘  {n}\n"
                         ),
                     )
+                    failed.append((filename, folder_dest, title))
 
-        downloaded_from_youtube = 0
-        for filename, rel_folder in failed:
-            title = os.path.splitext(filename)[0]
-            folder_dest = dest_base if rel_folder == "." else os.path.join(dest_base, rel_folder)
-            os.makedirs(folder_dest, exist_ok=True)
-
+        # Retry com variações de nome para arquivos que falharam
+        if failed:
             self.root.after(
                 0,
-                lambda t=title: self._append_cd_preview_text(
-                    f"Procurando no YouTube: {t}\n"
+                lambda: self._append_cd_preview_text(
+                    "-" * 60 + "\nTentando novamente com variações…\n" + "-" * 60 + "\n"
                 ),
             )
 
-            try:
-                results = search_youtube(title, max_results=1)
-                if not results:
-                    self.root.after(
-                        0,
-                        lambda t=title: self._append_cd_preview_text(
-                            f"  Sem resultado no YouTube: {t}\n"
-                        ),
-                    )
-                    continue
+            for filename, folder_dest, original_title in failed:
+                variations = get_name_variations(original_title)
 
-                top = results[0]
-                url = top.get("url") or top.get("webpage_url")
-                if not url and top.get("id"):
-                    url = f"https://www.youtube.com/watch?v={top['id']}"
+                for var_title in variations[1:]:
+                    try:
+                        results = search_youtube(var_title, max_results=1)
+                        if results:
+                            top = results[0]
+                            url = top.get("url") or top.get("webpage_url")
+                            if not url and top.get("id"):
+                                url = f"https://www.youtube.com/watch?v={top['id']}"
 
-                if not url:
-                    self.root.after(
-                        0,
-                        lambda t=title: self._append_cd_preview_text(
-                            f"  Resultado inválido para: {t}\n"
-                        ),
-                    )
-                    continue
-
-                mp3_path = download_mp3(url, title, folder_dest)
-                if os.path.exists(mp3_path):
-                    downloaded_from_youtube += 1
-                    self.root.after(
-                        0,
-                        lambda t=title: self._append_cd_preview_text(
-                            f"  Baixado do YouTube com sucesso: {t}\n"
-                        ),
-                    )
+                            if url:
+                                mp3_path = download_mp3(url, filename, folder_dest)
+                                if os.path.exists(mp3_path):
+                                    success += 1
+                                    self.root.after(
+                                        0,
+                                        lambda fn=filename, vt=var_title: self._append_cd_preview_text(
+                                            f"✔  {fn} ({vt})\n"
+                                        ),
+                                    )
+                                    break
+                    except Exception:
+                        pass
                 else:
                     self.root.after(
                         0,
-                        lambda t=title: self._append_cd_preview_text(
-                            f"  Download não gerou MP3: {t}\n"
+                        lambda fn=filename: self._append_cd_preview_text(
+                            f"⊘  {fn}\n"
                         ),
                     )
-            except Exception as exc:
-                self.root.after(
-                    0,
-                    lambda t=title, e=exc: self._append_cd_preview_text(
-                        f"  Falha no YouTube para {t}: {e}\n"
-                    ),
-                )
 
         return {
             "ok": True,
             "message": "Processo finalizado.",
             "dest": dest_base,
             "total": total,
-            "copied": total - len(failed),
-            "failed": len(failed),
-            "youtube_ok": downloaded_from_youtube,
+            "copied": success,
+            "failed": total - success,
+            "youtube_ok": 0,
         }
 
     def _on_copy_done(self, summary: dict) -> None:
