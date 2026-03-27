@@ -56,6 +56,18 @@ def c(text, color):
     return f"{colors.get(color, '')}{text}{Style.RESET_ALL}"
 
 
+class AnimatedSpinner:
+    """Spinner animado para mostrar progresso durante operações."""
+    def __init__(self):
+        self.frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self.current = 0
+
+    def next(self):
+        frame = self.frames[self.current]
+        self.current = (self.current + 1) % len(self.frames)
+        return frame
+
+
 def banner():
     print(c("""
 ╔══════════════════════════════════════════╗
@@ -152,6 +164,9 @@ def display_results(results: list[dict]) -> None:
 # ── download ─────────────────────────────────────────────────────────────────
 
 class ProgressHook:
+    def __init__(self):
+        self.spinner = AnimatedSpinner()
+
     def __call__(self, d):
         status = d.get("status")
         if status == "downloading":
@@ -159,18 +174,19 @@ class ProgressHook:
             downloaded = d.get("downloaded_bytes", 0)
             if total:
                 pct = downloaded / total * 100
-                bar_len = 30
+                bar_len = 25
                 filled  = int(bar_len * pct / 100)
                 bar     = "█" * filled + "░" * (bar_len - filled)
                 speed   = d.get("speed") or 0
                 speed_k = speed / 1024
+                spinner_frame = c(self.spinner.next(), "cyan")
                 print(
-                    f"\r  {c(bar, 'green')} {c(f'{pct:5.1f}%', 'yellow')} "
-                    f"  {c(f'{speed_k:.0f} KB/s', 'cyan')}",
+                    f"\r  {spinner_frame} {c(bar, 'green')} {c(f'{pct:5.1f}%', 'yellow')} "
+                    f"{c(f'{speed_k:.0f} KB/s', 'cyan')}",
                     end="", flush=True
                 )
         elif status == "finished":
-            print(f"\n  {c('✔ Download concluído! Convertendo…', 'green')}")
+            print(f"\n  {c('✔ Convertendo…', 'green')}")
 
 
 def download_mp3(video_url: str, title: str, output_dir: str = "downloads") -> str:
@@ -295,6 +311,7 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
     total = sum(len(files) for files in mp3_dict.values())
     processed = 0
     failed = []  # Lista de arquivos que falharam
+    spinner = AnimatedSpinner()
 
     for folderRelPath, files in sorted(mp3_dict.items()):
         # Criar pasta de destino
@@ -310,19 +327,21 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
             src_file = os.path.join(cd_path, folderRelPath, file) if folderRelPath != "." else os.path.join(cd_path, file)
             dst_file = os.path.join(dest_folder, file)
 
-            print(f"  [{processed:3d}/{total:3d}] {file}… ", end="", flush=True)
-
             # Tentar copiar do CD
             copied = False
             try:
+                # Mostrar spinner durante a cópia
+                print(f"  [{processed:3d}/{total:3d}] {file}… {c(spinner.next(), 'cyan')}", end="", flush=True)
                 shutil.copy2(src_file, dst_file)
                 file_size = os.path.getsize(dst_file) / (1024 * 1024)
-                print(c(f"✔ ({file_size:.1f} MB)", "green"))
+                print(c(f"\b✔ ({file_size:.1f} MB)", "green"))
                 copied = True
             except Exception:
                 # Se falhar, tenta YouTube imediatamente
                 title = os.path.splitext(file)[0]
                 try:
+                    # Mostrar spinner durante a busca no YouTube
+                    print(c(spinner.next(), "cyan"), end="", flush=True)
                     results = search_youtube(title, max_results=1)
                     if results:
                         url = results[0].get("url") or results[0].get("webpage_url") or \
@@ -352,7 +371,7 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
             variations = get_name_variations(original_title)
 
             for var_title in variations[1:]:  # Pular a primeira que já foi tentada
-                print(f"  Retentando: {file} ({var_title})… ", end="", flush=True)
+                print(f"  Retentando: {file} ({var_title})… {c(spinner.next(), 'cyan')}", end="", flush=True)
 
                 try:
                     results = search_youtube(var_title, max_results=1)
@@ -364,13 +383,13 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
 
                         if os.path.exists(mp3_path):
                             file_size = os.path.getsize(mp3_path) / (1024 * 1024)
-                            print(c(f"✔ ({file_size:.1f} MB)", "green"))
+                            print(c(f"\b✔ ({file_size:.1f} MB)", "green"))
                             break
                 except Exception:
                     pass
             else:
                 # Se nenhuma variação funcionou
-                print(c("⊘ ", "yellow"))
+                print(c("⊘", "yellow"))
 
     print(c(f"\n  {'─'*60}", "blue"))
     print(c(f"  ✔ Processamento concluído!", "green"))

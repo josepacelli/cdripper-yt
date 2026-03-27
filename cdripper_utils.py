@@ -36,7 +36,22 @@ def search_youtube(query: str, max_results: int = 5) -> list[dict]:
 
 # ── download ─────────────────────────────────────────────────────────────────
 
+class AnimatedSpinner:
+    """Spinner animado para mostrar progresso durante operações."""
+    def __init__(self):
+        self.frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+        self.current = 0
+
+    def next(self):
+        frame = self.frames[self.current]
+        self.current = (self.current + 1) % len(self.frames)
+        return frame
+
+
 class ProgressHook:
+    def __init__(self):
+        self.spinner = AnimatedSpinner()
+
     def __call__(self, d):
         status = d.get("status")
         if status == "downloading":
@@ -44,17 +59,18 @@ class ProgressHook:
             downloaded = d.get("downloaded_bytes", 0)
             if total:
                 pct = downloaded / total * 100
-                bar_len = 30
+                bar_len = 25
                 filled  = int(bar_len * pct / 100)
                 bar     = "█" * filled + "░" * (bar_len - filled)
                 speed   = d.get("speed") or 0
                 speed_k = speed / 1024
+                spinner_frame = self.spinner.next()
                 print(
-                    f"\r  {bar} {pct:5.1f}%   {speed_k:.0f} KB/s",
+                    f"\r  {spinner_frame} {bar} {pct:5.1f}%   {speed_k:.0f} KB/s",
                     end="", flush=True
                 )
         elif status == "finished":
-            print(f"\n  ✔ Download concluído! Convertendo…")
+            print(f"\n  ✔ Convertendo…")
 
 
 def sanitize_filename(name: str) -> str:

@@ -173,6 +173,12 @@ pyinstaller -y --onefile --windowed --name "cdripper" cdripper-gui.py
    - Keep messages brief and supportive
    - Avoid technical jargon in user-facing text
 
+5. **Continuous Visual Feedback**:
+   - Show animated spinner (⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏) during all operations
+   - Never let the user think the application is frozen
+   - Include progress bar during downloads with real-time speed display
+   - Update display continuously without interruption
+
 These principles are core to the project's mission and should guide all development decisions.
 
 ## Build Output
