@@ -4,6 +4,8 @@ python-dateutil>=2.8.0
 # Downloader de Música (cdripper-console.py / cdripper-gui.py)
 yt-dlp>=2024.0.0
 colorama>=0.4.6
+mutagen>=1.47.0
+Pillow>=10.0.0
 
 # GUI (cdripper-gui.py)
 # tkinter e dependencia de sistema do Python (nao pacote pip).

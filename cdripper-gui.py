@@ -37,12 +37,15 @@ except Exception as exc:
     raise SystemExit(1)
 
 from cdripper_utils import (
+    apply_artwork_to_mp3,
     download_mp3,
     find_cd_drives,
     find_mp3_files,
+    get_mp3_metadata,
     get_next_cd_number,
     search_youtube,
     get_name_variations,
+
 )
 
 
@@ -453,14 +456,32 @@ class IsaacGUIApp:
         self.cd_progress_frame = tk.Frame(container, bg="#F6FBFF")
         self.cd_progress_frame.pack(fill="x", pady=(10, 0))
 
+        # Frame horizontal: imagem à esquerda + nome do arquivo à direita
+        artwork_row = tk.Frame(self.cd_progress_frame, bg="#F6FBFF")
+        artwork_row.pack(fill="x", pady=(0, 8))
+
+        # Label para capa de álbum (80x80, placeholder cinza)
+        self.cd_artwork_label = tk.Label(
+            artwork_row,
+            bg="#E8E8E8",
+            width=10,
+            height=4,
+            relief="flat",
+        )
+        self.cd_artwork_label.pack(side="left", padx=(0, 12))
+        self.cd_artwork_photo = None  # Referência para evitar garbage collection
+
+        # Nome do arquivo à direita
         self.cd_current_file_label = tk.Label(
-            self.cd_progress_frame,
+            artwork_row,
             text="",
             font=("Arial", 14, "bold"),
             bg="#F6FBFF",
             fg="#333333",
+            anchor="w",
+            justify="left",
         )
-        self.cd_current_file_label.pack(anchor="w", pady=(0, 8))
+        self.cd_current_file_label.pack(side="left", fill="x", expand=True)
 
         self.cd_progress_bar = Win7ProgressBar(
             self.cd_progress_frame,
@@ -597,10 +618,12 @@ class IsaacGUIApp:
         self.cd_current_file_label.configure(text="Iniciando…")
         self.cd_progress_percent.configure(text="0%")
         self.cd_progress_count.configure(text=f"0/{total} arquivos")
+        self._update_cd_artwork(None)  # Limpar imagem para placeholder
 
     def _hide_progress_bar(self) -> None:
         """Oculta a barra de progresso e mostra o preview text."""
         self.cd_progress_bar.stop_animation()  # Parar animação da barra
+        self._update_cd_artwork(None)  # Limpar imagem
         self.cd_progress_frame.pack_forget()
         self.cd_preview_text.pack(fill="both", expand=True)
 
@@ -684,6 +707,29 @@ class IsaacGUIApp:
         self.cd_details_text.insert(tk.END, message + "\n")
         self.cd_details_text.see(tk.END)
         self.cd_details_text.configure(state="disabled")
+
+    def _update_cd_artwork(self, artwork_bytes: bytes | None, mime: str = "image/jpeg") -> None:
+        """Atualiza a imagem de capa exibida durante a cópia. Chamado via root.after()."""
+        SIZE = 80
+        if not artwork_bytes:
+            # Sem imagem: limpar label para placeholder cinza
+            self.cd_artwork_label.configure(image="")
+            self.cd_artwork_photo = None
+            return
+
+        try:
+            from PIL import Image, ImageTk
+            import io
+
+            img = Image.open(io.BytesIO(artwork_bytes))
+            img = img.convert("RGB").resize((SIZE, SIZE), Image.LANCZOS)
+            photo = ImageTk.PhotoImage(img)
+            self.cd_artwork_photo = photo  # manter referência para evitar garbage collection
+            self.cd_artwork_label.configure(image=photo)
+        except Exception:
+            # Se PIL falhar: mostrar placeholder
+            self.cd_artwork_label.configure(image="")
+            self.cd_artwork_photo = None
 
     def _set_cd_preview_text(self, text: str) -> None:
         self.cd_preview_text.configure(state="normal")
@@ -915,16 +961,26 @@ class IsaacGUIApp:
                 try:
                     shutil.copy2(src_file, dst_file)
                     success += 1
+                    # Ler metadados da cópia para exibir capa
+                    cd_metadata = get_mp3_metadata(dst_file)
                     self.root.after(
                         0,
                         lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
                     )
                     self.root.after(0, lambda n=filename: self._update_details_log(f"✔ CD: {n}"))
+                    self.root.after(
+                        0,
+                        lambda m=cd_metadata: self._update_cd_artwork(
+                            m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
+                        ),
+                    )
                     copied = True
                 except Exception:
                     # Se falhar, tenta YouTube imediatamente
+                    cd_metadata = get_mp3_metadata(src_file)
                     try:
-                        results = search_youtube(title, max_results=1)
+                        cd_duration = cd_metadata.get("duration_secs")
+                        results = search_youtube(title, max_results=5, expected_duration_secs=cd_duration)
                         if results:
                             top = results[0]
                             url = top.get("url") or top.get("webpage_url")
@@ -934,12 +990,19 @@ class IsaacGUIApp:
                             if url:
                                 mp3_path = download_mp3(url, title, folder_dest)
                                 if os.path.exists(mp3_path):
+                                    apply_artwork_to_mp3(mp3_path, cd_metadata)
                                     success += 1
                                     self.root.after(
                                         0,
                                         lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
                                     )
                                     self.root.after(0, lambda n=filename: self._update_details_log(f"🎵 YouTube: {n}"))
+                                    self.root.after(
+                                        0,
+                                        lambda m=cd_metadata: self._update_cd_artwork(
+                                            m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
+                                        ),
+                                    )
                                     copied = True
                     except Exception:
                         pass
@@ -950,16 +1013,17 @@ class IsaacGUIApp:
                         lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
                     )
                     self.root.after(0, lambda n=filename: self._update_details_log(f"⊘ Falhou: {n}"))
-                    failed.append((filename, folder_dest, title))
+                    failed.append((filename, folder_dest, title, cd_metadata))
 
         # Retry com variações de nome para arquivos que falharam
         if failed:
-            for filename, folder_dest, original_title in failed:
+            for filename, folder_dest, original_title, cd_metadata in failed:
                 variations = get_name_variations(original_title)
+                cd_duration = cd_metadata.get("duration_secs")
 
                 for var_title in variations[1:]:
                     try:
-                        results = search_youtube(var_title, max_results=1)
+                        results = search_youtube(var_title, max_results=5, expected_duration_secs=cd_duration)
                         if results:
                             top = results[0]
                             url = top.get("url") or top.get("webpage_url")
@@ -969,7 +1033,14 @@ class IsaacGUIApp:
                             if url:
                                 mp3_path = download_mp3(url, filename, folder_dest)
                                 if os.path.exists(mp3_path):
+                                    apply_artwork_to_mp3(mp3_path, cd_metadata)
                                     success += 1
+                                    self.root.after(
+                                        0,
+                                        lambda m=cd_metadata: self._update_cd_artwork(
+                                            m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
+                                        ),
+                                    )
                                     break
                     except Exception:
                         pass

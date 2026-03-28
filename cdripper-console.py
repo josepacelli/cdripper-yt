@@ -171,8 +171,8 @@ def get_choice(prompt: str, min_val: int, max_val: int) -> int | None:
 
 # ── busca ────────────────────────────────────────────────────────────────────
 
-def search_youtube(query: str, max_results: int = 5) -> list[dict]:
-    """Retorna lista de vídeos encontrados."""
+def search_youtube(query: str, max_results: int = 5, expected_duration_secs: float = None) -> list[dict]:
+    """Retorna lista de vídeos encontrados, ordenados por proximidade de duração se fornecida."""
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
@@ -181,7 +181,16 @@ def search_youtube(query: str, max_results: int = 5) -> list[dict]:
     url = f"ytsearch{max_results}:{query}"
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
-        return info.get("entries", [])
+        entries = info.get("entries", [])
+
+    # Se duração esperada foi fornecida, ordenar por proximidade
+    if expected_duration_secs and entries:
+        def duration_score(entry):
+            d = entry.get("duration") or 0
+            return abs(d - expected_duration_secs)
+        entries = sorted(entries, key=duration_score)
+
+    return entries
 
 
 def display_results(results: list[dict]) -> None:
@@ -252,6 +261,63 @@ def download_mp3(video_url: str, title: str, output_dir: str = "downloads") -> s
 
     mp3_file = os.path.join(output_dir, f"{safe_title}.mp3")
     return mp3_file
+
+
+def get_mp3_metadata(mp3_path: str) -> dict:
+    """Extrai metadados (imagem, duração) de um MP3. Retorna dict com os dados encontrados."""
+    try:
+        from mutagen.mp3 import MP3
+        from mutagen.id3 import ID3
+
+        audio = MP3(mp3_path)
+        metadata = {"duration_secs": audio.info.length}
+
+        # Tentar extrair tags ID3
+        try:
+            tags = ID3(mp3_path)
+            # Procurar por imagem/capa (APIC = Attached Picture)
+            for key in tags.keys():
+                if key.startswith("APIC"):
+                    apic = tags[key]
+                    metadata["artwork_bytes"] = apic.data
+                    metadata["artwork_mime"] = apic.mime
+                    metadata["artwork_desc"] = apic.desc
+                    metadata["artwork_type"] = apic.type
+                    break
+        except Exception:
+            pass  # Arquivo sem tags ID3 é ok
+
+        return metadata
+    except Exception:
+        return {}
+
+
+def apply_artwork_to_mp3(mp3_path: str, metadata: dict) -> None:
+    """Aplica imagem/capa de um metadata dict a um arquivo MP3."""
+    if not metadata.get("artwork_bytes"):
+        return
+
+    try:
+        from mutagen.id3 import ID3, APIC, error as ID3Error
+
+        # Tentar ler tags existentes, ou criar novas
+        try:
+            tags = ID3(mp3_path)
+        except ID3Error:
+            tags = ID3()
+
+        # Remover artwork existente e adicionar a nova
+        tags.delall("APIC")
+        tags.add(APIC(
+            encoding=3,  # UTF-8
+            mime=metadata.get("artwork_mime", "image/jpeg"),
+            type=metadata.get("artwork_type", 3),  # 3 = cover front
+            desc=metadata.get("artwork_desc", "Cover"),
+            data=metadata["artwork_bytes"],
+        ))
+        tags.save(mp3_path)
+    except Exception:
+        pass  # Falha silenciosa para não alarmar usuários
 
 
 # ── cópia de CDs ─────────────────────────────────────────────────────────────
@@ -381,8 +447,10 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
             except Exception:
                 # Se falhar, tenta YouTube imediatamente
                 title = os.path.splitext(file)[0]
+                cd_metadata = get_mp3_metadata(src_file)
                 try:
-                    results = search_youtube(title, max_results=1)
+                    cd_duration = cd_metadata.get("duration_secs")
+                    results = search_youtube(title, max_results=5, expected_duration_secs=cd_duration)
                     if results:
                         url = results[0].get("url") or results[0].get("webpage_url") or \
                               f"https://www.youtube.com/watch?v={results[0]['id']}"
@@ -390,6 +458,7 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
                         mp3_path = download_mp3(url, file, dest_folder)
 
                         if os.path.exists(mp3_path):
+                            apply_artwork_to_mp3(mp3_path, cd_metadata)
                             print(c(" ✔", "green"))
                             copied = True
                 except Exception:
@@ -397,7 +466,7 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
 
                 if not copied:
                     print(c(" ⊘", "yellow"))
-                    failed.append((file, dest_folder, title))
+                    failed.append((file, dest_folder, title, cd_metadata))
 
     # Retry com variações de nome para arquivos que falharam
     if failed:
@@ -405,14 +474,15 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
         print(c(f"  Tentando novamente com variações…", "cyan"))
         print(c(f"  {'─'*60}", "blue"))
 
-        for file, dest_folder, original_title in failed:
+        for file, dest_folder, original_title, cd_metadata in failed:
             variations = get_name_variations(original_title)
+            cd_duration = cd_metadata.get("duration_secs")
 
             for var_title in variations[1:]:  # Pular a primeira que já foi tentada
                 print(f"  Retentando: {file} ({var_title})… {c(spinner.next(), 'cyan')}", end="", flush=True)
 
                 try:
-                    results = search_youtube(var_title, max_results=1)
+                    results = search_youtube(var_title, max_results=5, expected_duration_secs=cd_duration)
                     if results:
                         url = results[0].get("url") or results[0].get("webpage_url") or \
                               f"https://www.youtube.com/watch?v={results[0]['id']}"
@@ -420,6 +490,7 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
                         mp3_path = download_mp3(url, file, dest_folder)
 
                         if os.path.exists(mp3_path):
+                            apply_artwork_to_mp3(mp3_path, cd_metadata)
                             print(c(" ✔", "green"))
                             break
                 except Exception:
