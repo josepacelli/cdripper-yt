@@ -1037,7 +1037,7 @@ class IsaacGUIApp:
                                 url = f"https://www.youtube.com/watch?v={top['id']}"
 
                             if url:
-                                mp3_path = download_mp3(url, filename, folder_dest)
+                                mp3_path = download_mp3(url, original_title, folder_dest)
                                 if os.path.exists(mp3_path):
                                     # Validar duração antes de aceitar
                                     cd_duration = cd_metadata.get("duration_secs")
@@ -1081,7 +1081,7 @@ class IsaacGUIApp:
                             url = f"https://www.youtube.com/watch?v={top['id']}"
 
                         if url:
-                            mp3_path = download_mp3(url, filename, folder_dest)
+                            mp3_path = download_mp3(url, original_title, folder_dest)
                             if os.path.exists(mp3_path):
                                 # Validação SEM rigor: aceita qualquer duração > 30s
                                 if cd_duration and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30, strict=False):
