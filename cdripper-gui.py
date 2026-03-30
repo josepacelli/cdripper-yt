@@ -507,12 +507,12 @@ class IsaacGUIApp:
         artwork_row = tk.Frame(self.cd_progress_frame, bg="#F6FBFF")
         artwork_row.pack(fill="x", pady=(0, 8))
 
-        # Label para capa de álbum (80x80, placeholder cinza)
+        # Label para capa de álbum (48x48, placeholder cinza)
         self.cd_artwork_label = tk.Label(
             artwork_row,
             bg="#E8E8E8",
-            width=20,
-            height=8,
+            width=6,
+            height=3,
             relief="flat",
         )
         self.cd_artwork_label.pack(side="left", padx=(0, 12))
@@ -913,7 +913,7 @@ class IsaacGUIApp:
 
     def _update_cd_artwork(self, artwork_bytes: bytes | None, mime: str = "image/jpeg") -> None:
         """Atualiza a imagem de capa exibida durante a cópia. Chamado via root.after()."""
-        SIZE = 120
+        SIZE = 48
         if not artwork_bytes:
             # Sem imagem: limpar label para placeholder cinza
             self.cd_artwork_label.configure(image="")
