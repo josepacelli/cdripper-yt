@@ -448,6 +448,7 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
 
     total = sum(len(files) for files in mp3_dict.values())
     processed = 0
+    success = 0
     failed = []  # Lista de arquivos que falharam
     spinner = AnimatedSpinner()
     start_time = time_module.time()
@@ -471,6 +472,7 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
             try:
                 show_progress(processed, total, file, start_time, spinner)
                 shutil.copy2(src_file, dst_file)
+                success += 1
                 print(c(" ✔", "green"))
                 copied = True
             except Exception:
@@ -497,6 +499,7 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
                             else:
                                 # Duração OK, aceitar arquivo
                                 apply_artwork_to_mp3(mp3_path, cd_metadata)
+                                success += 1
                                 print(c(" ✔", "green"))
                                 copied = True
                 except Exception:
@@ -538,6 +541,7 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
                             else:
                                 # Duração OK, aceitar arquivo
                                 apply_artwork_to_mp3(mp3_path, cd_metadata)
+                                success += 1
                                 print(c(" ✔", "green"))
                                 break
                 except Exception:
@@ -582,6 +586,10 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
 
     print(c(f"\n  {'─'*60}", "blue"))
     print(c(f"  ✔ Processamento concluído!", "green"))
+    print(c(f"  {'─'*60}", "blue"))
+    print(c(f"  ✔ {total} arquivo(s)", "green"))
+    print(c(f"  Destino: {cd_output}", "cyan"))
+    print(c(f"  {'─'*60}", "blue"))
 
 
 
