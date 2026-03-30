@@ -418,7 +418,7 @@ class IsaacGUIApp:
 
         self.nav_tree = ttk.Treeview(
             nav_frame,
-            height=14,
+            height=6,
             yscrollcommand=scrollbar.set,
         )
         self.nav_tree.pack(side="left", fill="both", expand=True)
