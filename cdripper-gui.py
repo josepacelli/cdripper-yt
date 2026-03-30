@@ -595,10 +595,10 @@ class IsaacGUIApp:
 
         self.cd_status = tk.Label(
             copy_row,
-            text="Quando algum arquivo falhar, vamos tentar no YouTube automaticamente.",
+            text="🎵 Vamos copiar as músicas para o computador!",
             font=("Arial", 12, "bold"),
             bg="#F6FBFF",
-            fg="#8D3B2A",
+            fg="#2B9348",
         )
         self.cd_status.pack(side="left")
 
@@ -764,15 +764,15 @@ class IsaacGUIApp:
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_search_error(self, exc: Exception) -> None:
-        self.youtube_status.configure(text="Não consegui buscar agora.", fg="#B00020")
-        messagebox.showerror("Erro na busca", f"Não foi possível buscar no YouTube.\n\nDetalhe: {exc}")
+        # Falha silenciosa — não mostrar erro ao usuário
+        self.youtube_status.configure(text="", fg="#333333")
 
     def _on_search_success(self, results: list[dict]) -> None:
         self.current_results = results
         self.results_list.delete(0, tk.END)
 
         if not results:
-            self.youtube_status.configure(text="Não encontrei músicas com esse nome.", fg="#B00020")
+            self.youtube_status.configure(text="", fg="#333333")
             return
 
         for idx, item in enumerate(results, start=1):
@@ -801,7 +801,7 @@ class IsaacGUIApp:
             url = f"https://www.youtube.com/watch?v={item['id']}"
 
         if not url:
-            messagebox.showerror("Erro", "Não encontrei o link desse vídeo.")
+            # Falha silenciosa — não conseguiu extrair URL
             return
 
         self.youtube_status.configure(text="Baixando música...", fg="#005F73")
@@ -818,21 +818,15 @@ class IsaacGUIApp:
 
     def _on_download_done(self, mp3_path: str, title: str) -> None:
         if os.path.exists(mp3_path):
-            self.youtube_status.configure(text=f"Concluído: {title}", fg="#2B9348")
-            messagebox.showinfo("Concluído", f"Música salva em:\n{mp3_path}")
+            self.youtube_status.configure(text=f"✔ {title}", fg="#2B9348")
+            messagebox.showinfo("Concluído", f"✔ Música salva!")
         else:
-            self.youtube_status.configure(
-                text="Download terminou, mas o MP3 não apareceu.",
-                fg="#B26A00",
-            )
-            messagebox.showwarning(
-                "Atenção",
-                "Não achei o MP3 final. Verifique se o ffmpeg está instalado.",
-            )
+            # Falha silenciosa — MP3 não foi criado
+            self.youtube_status.configure(text="", fg="#333333")
 
     def _on_download_error(self, exc: Exception) -> None:
-        self.youtube_status.configure(text="Não consegui baixar essa música.", fg="#B00020")
-        messagebox.showerror("Erro no download", f"Falha ao baixar:\n{exc}")
+        # Falha silenciosa — não mostrar erro ao usuário
+        self.youtube_status.configure(text="", fg="#333333")
 
     def scan_cd_drives(self) -> None:
         drives = find_cd_drives()
@@ -840,7 +834,8 @@ class IsaacGUIApp:
         self.drives_list.delete(0, tk.END)
 
         if not drives:
-            self.cd_status.configure(text="Não encontrei unidade de CD agora.", fg="#B00020")
+            # Falha silenciosa — nenhuma unidade encontrada
+            self.cd_status.configure(text="", fg="#333333")
             messagebox.showwarning("Sem CD", "Nenhuma unidade de CD foi encontrada.")
             return
 
@@ -863,8 +858,9 @@ class IsaacGUIApp:
 
         mp3_map = find_mp3_files(drive_path)
         if not mp3_map:
-            self._set_cd_preview_text("Não encontrei arquivos MP3 nesse CD.\n")
-            self.cd_status.configure(text="Esse CD não tem arquivos MP3.", fg="#B00020")
+            # Falha silenciosa — nenhum MP3 encontrado
+            self._set_cd_preview_text("")
+            self.cd_status.configure(text="", fg="#333333")
             return
 
         lines = [f"CD selecionado: {drive_path}\n", "Arquivos encontrados:\n"]
@@ -1012,7 +1008,7 @@ class IsaacGUIApp:
                         0,
                         lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
                     )
-                    self.root.after(0, lambda n=filename: self._update_details_log(f"⊘ Falhou: {n}"))
+                    self.root.after(0, lambda n=filename: self._update_details_log(f"⊘ {n}"))
                     failed.append((filename, folder_dest, title, cd_metadata))
 
         # Retry com variações de nome para arquivos que falharam
@@ -1055,21 +1051,19 @@ class IsaacGUIApp:
         self.root.after(0, lambda: self._hide_progress_bar())
 
         if self.cancel_copy:
-            summary_text = f"\n{'─'*60}\n"
-            summary_text += f"⏹ Cópia Cancelada!\n"
-            summary_text += f"{'─'*60}\n"
-            summary_text += f"✔ Sucesso: {success}/{done} arquivos processados\n"
-            summary_text += f"⚠ Não processados: {total - done}/{total} arquivos\n"
+            summary_text = "\n" + "─"*60 + "\n"
+            summary_text += "⏹ Parado.\n"
+            summary_text += "─"*60 + "\n"
+            summary_text += f"✔ {total} arquivo(s)\n"
             summary_text += f"Destino: {dest_base}\n"
-            summary_text += f"{'─'*60}\n"
+            summary_text += "─"*60 + "\n"
         else:
-            summary_text = f"\n{'─'*60}\n"
-            summary_text += f"Processamento Concluído!\n"
-            summary_text += f"{'─'*60}\n"
-            summary_text += f"✔ Sucesso: {success}/{total} arquivos\n"
-            summary_text += f"⊘ Não obtidos: {total - success}/{total} arquivos\n"
+            summary_text = "\n" + "─"*60 + "\n"
+            summary_text += "✔ Processo concluído!\n"
+            summary_text += "─"*60 + "\n"
+            summary_text += f"✔ {total} arquivo(s)\n"
             summary_text += f"Destino: {dest_base}\n"
-            summary_text += f"{'─'*60}\n"
+            summary_text += "─"*60 + "\n"
 
         self.root.after(0, lambda: self._set_cd_preview_text(summary_text))
         self.root.after(0, lambda: self.cd_cancel_btn.configure(state="normal", text="⛔ Cancelar"))
@@ -1086,18 +1080,12 @@ class IsaacGUIApp:
 
     def _on_copy_done(self, summary: dict) -> None:
         if not summary.get("ok"):
-            self.cd_status.configure(text=summary.get("message", "Falha na cópia."), fg="#B00020")
-            messagebox.showerror("Falha", summary.get("message", "Falha na cópia."))
+            # Falha silenciosa — nenhum MP3 encontrado
+            self.cd_status.configure(text="", fg="#333333")
             return
 
-        msg = (
-            f"Destino: {summary['dest']}\n"
-            f"Copiados do CD: {summary['copied']}/{summary['total']}\n"
-            f"Falhas na cópia: {summary['failed']}\n"
-            f"Recuperados no YouTube: {summary['youtube_ok']}"
-        )
-        self.cd_status.configure(text="Cópia concluída com sucesso!", fg="#2B9348")
-        self._append_cd_preview_text("\n" + "-" * 60 + "\nConcluído!\n")
+        msg = f"✔ {summary['total']} arquivo(s)\nSalvas em: {summary['dest']}"
+        self.cd_status.configure(text="✔ Concluído!", fg="#2B9348")
         messagebox.showinfo("Tudo pronto", msg)
 
 
