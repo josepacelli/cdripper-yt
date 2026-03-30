@@ -168,7 +168,7 @@ class IsaacGUIApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Isaac Music - Modo Infantil")
-        self.root.geometry("1080x760")
+        self.root.geometry("1280x770")
         self.root.minsize(980, 680)
         self.root.configure(bg="#F6FBFF")
 
@@ -208,9 +208,8 @@ class IsaacGUIApp:
         style.map("TNotebook.Tab", background=[("selected", "#BDE0FE"), ("!selected", "#EAF6FF")])
 
         # Estilo para o Treeview
-        # Usar rowheight menor no Linux para evitar texto cortado
-        rowheight = 24 if platform.system() == "Linux" else 28
-        style.configure("Treeview", font=("Arial", 13), rowheight=rowheight)
+        rowheight = 72 if platform.system() == "Linux" else 28
+        style.configure("Treeview", font=("Arial", 19), rowheight=rowheight)
         style.configure("Treeview.Heading", font=("Arial", 12, "bold"))
 
     def _build_header(self) -> None:
