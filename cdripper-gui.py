@@ -1002,7 +1002,7 @@ class IsaacGUIApp:
                                             0,
                                             lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
                                         )
-                                        self.root.after(0, lambda n=filename: self._update_details_log(f"🎵 YouTube: {n}"))
+                                        self.root.after(0, lambda n=filename: self._update_details_log(f"✔ CD: {n}"))
                                         self.root.after(
                                             0,
                                             lambda m=cd_metadata: self._update_cd_artwork(
