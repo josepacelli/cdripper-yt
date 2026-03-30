@@ -308,3 +308,46 @@ def get_name_variations(title: str) -> list[str]:
             unique_variations.append(v)
 
     return unique_variations
+
+
+def fetch_playlist_tracks(url_or_query: str) -> list[dict]:
+    """
+    Busca uma playlist do YouTube por URL ou nome.
+    Aceita URL de playlist ou texto de busca (ex: 'Adalino Nascimento playlist').
+    Retorna lista de dicts: [{title, url, duration_secs}]
+    Usa extract_flat=True para só buscar metadados sem baixar.
+    """
+    ydl_opts = {
+        "quiet": True,
+        "extract_flat": True,   # só metadados, sem baixar
+        "no_warnings": True,
+    }
+
+    # Se não for URL, buscar playlist por nome
+    if not url_or_query.startswith("http"):
+        query = f"ytsearch10:{url_or_query} playlist"
+    else:
+        query = url_or_query
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(query, download=False)
+
+        # Extrair lista de faixas
+        entries = info.get("entries") or [info]
+
+        tracks = []
+        for e in entries:
+            if not e:
+                continue
+            track = {
+                "title": e.get("title", "Desconhecido"),
+                "url": e.get("url") or e.get("webpage_url", ""),
+                "duration_secs": e.get("duration") or 0,
+            }
+            if track["url"]:
+                tracks.append(track)
+
+        return tracks
+    except Exception:
+        return []

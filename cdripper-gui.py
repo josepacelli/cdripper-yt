@@ -16,6 +16,7 @@ import shutil
 import sys
 import threading
 import time
+from pathlib import Path
 
 try:
     import tkinter as tk
@@ -39,6 +40,7 @@ except Exception as exc:
 from cdripper_utils import (
     apply_artwork_to_mp3,
     download_mp3,
+    fetch_playlist_tracks,
     find_cd_drives,
     find_mp3_files,
     get_mp3_metadata,
@@ -187,6 +189,12 @@ class IsaacGUIApp:
         self.nav_item_to_path: dict[str, str] = {}  # Mapeamento de tree item ID → caminho absoluto
         self.nav_loaded_items: set[str] = set()  # Tree items já carregados (evita reload)
 
+        # Playlist YouTube
+        self.playlist_tracks: list[dict] = []  # Faixas carregadas da playlist
+        self.playlist_cancel: bool = False  # Flag para cancelar download da playlist
+        self.playlist_start_time: float = 0.0  # Tempo de início do download
+        self.playlist_in_progress: bool = False  # Flag para indicar download em andamento
+
         self._build_styles()
         self._build_header()
         self._build_tabs()
@@ -240,12 +248,15 @@ class IsaacGUIApp:
 
         self.youtube_tab = tk.Frame(notebook, bg="#F6FBFF")
         self.cd_tab = tk.Frame(notebook, bg="#F6FBFF")
+        self.playlist_tab = tk.Frame(notebook, bg="#F6FBFF")
 
         notebook.add(self.youtube_tab, text="📺 YouTube")
         notebook.add(self.cd_tab, text="💿 Copiar CD")
+        notebook.add(self.playlist_tab, text="💿 Playlist")
 
         self._build_youtube_tab()
         self._build_cd_tab()
+        self._build_playlist_tab()
 
     def _build_youtube_tab(self) -> None:
         container = tk.Frame(self.youtube_tab, bg="#F6FBFF")
@@ -637,6 +648,162 @@ class IsaacGUIApp:
             fg="#2B9348",
         )
         self.cd_status.pack(side="left")
+
+    def _build_playlist_tab(self) -> None:
+        container = tk.Frame(self.playlist_tab, bg="#F6FBFF")
+        container.pack(fill="both", expand=True, padx=16, pady=14)
+
+        # Passo 1: Entrada de URL ou nome
+        step1_label = tk.Label(
+            container,
+            text="1) Cole a URL ou nome do artista/álbum",
+            font=self.section_font,
+            bg="#F6FBFF",
+            fg="#175A8A",
+        )
+        step1_label.pack(anchor="w", pady=(0, 8))
+
+        self.playlist_query = tk.Entry(
+            container,
+            font=self.text_font,
+            bg="white",
+            fg="#333333",
+            relief="solid",
+            borderwidth=2,
+        )
+        self.playlist_query.pack(fill="x", pady=(0, 8))
+
+        load_button = tk.Button(
+            container,
+            text="🔍 Carregar faixas",
+            font=("Arial", 14, "bold"),
+            bg="#FEAE1B",
+            fg="white",
+            padx=20,
+            pady=12,
+            border=0,
+            cursor="hand2",
+            command=self._load_playlist_tracks,
+        )
+        load_button.pack(anchor="w", pady=(0, 16))
+
+        # Passo 2: Preview de faixas
+        step2_label = tk.Label(
+            container,
+            text="2) Confira as faixas",
+            font=self.section_font,
+            bg="#F6FBFF",
+            fg="#175A8A",
+        )
+        step2_label.pack(anchor="w", pady=(8, 8))
+
+        self.playlist_preview_text = tk.Text(
+            container,
+            font=("Courier", 12),
+            bg="white",
+            fg="#333333",
+            height=10,
+            state="disabled",
+        )
+        self.playlist_preview_text.pack(fill="both", expand=True, pady=(0, 12))
+
+        # Pasta de destino
+        dest_frame = tk.Frame(container, bg="#F6FBFF")
+        dest_frame.pack(fill="x", pady=(0, 8))
+
+        dest_label = tk.Label(
+            dest_frame,
+            text="Pasta destino:",
+            font=("Arial", 12, "bold"),
+            bg="#F6FBFF",
+            fg="#175A8A",
+        )
+        dest_label.pack(side="left", padx=(0, 8))
+
+        self.playlist_output_entry = tk.Entry(
+            dest_frame,
+            font=self.text_font,
+            bg="white",
+            fg="#333333",
+        )
+        self.playlist_output_entry.insert(0, "downloads")
+        self.playlist_output_entry.pack(side="left", fill="x", expand=True)
+
+        # Status line
+        self.playlist_status = tk.Label(
+            container,
+            text="",
+            font=("Arial", 11),
+            bg="#F6FBFF",
+            fg="#666666",
+        )
+        self.playlist_status.pack(anchor="w", pady=(4, 8))
+
+        # Botão de download (inicialmente visível)
+        download_button = tk.Button(
+            container,
+            text="🎵 Baixar tudo",
+            font=("Arial", 14, "bold"),
+            bg="#2B9348",
+            fg="white",
+            padx=20,
+            pady=12,
+            border=0,
+            cursor="hand2",
+            command=self._start_playlist_download,
+        )
+        download_button.pack(anchor="w", pady=(0, 12))
+
+        # Progress frame (inicialmente oculto)
+        self.playlist_progress_frame = tk.Frame(container, bg="#F6FBFF")
+        self.playlist_progress_frame.pack_forget()
+
+        self.playlist_progress_bar = Win7ProgressBar(self.playlist_progress_frame, height=24)
+        self.playlist_progress_bar.pack(fill="x", pady=(10, 8))
+
+        progress_info = tk.Frame(self.playlist_progress_frame, bg="#F6FBFF")
+        progress_info.pack(fill="x", pady=(0, 8))
+
+        self.playlist_progress_percent = tk.Label(
+            progress_info,
+            text="0%",
+            font=("Arial", 11, "bold"),
+            bg="#F6FBFF",
+            fg="#175A8A",
+        )
+        self.playlist_progress_percent.pack(side="left", padx=(0, 16))
+
+        self.playlist_progress_count = tk.Label(
+            progress_info,
+            text="0/0 faixas",
+            font=("Arial", 11, "bold"),
+            bg="#F6FBFF",
+            fg="#175A8A",
+        )
+        self.playlist_progress_count.pack(side="left", padx=(0, 16))
+
+        self.playlist_progress_speed = tk.Label(
+            progress_info,
+            text="",
+            font=("Arial", 11),
+            bg="#F6FBFF",
+            fg="#666666",
+        )
+        self.playlist_progress_speed.pack(side="left", padx=(0, 16))
+
+        cancel_button = tk.Button(
+            self.playlist_progress_frame,
+            text="⊘ Cancelar",
+            font=("Arial", 12, "bold"),
+            bg="#E74C3C",
+            fg="white",
+            padx=16,
+            pady=10,
+            border=0,
+            cursor="hand2",
+            command=self._cancel_playlist,
+        )
+        cancel_button.pack(anchor="w", pady=(8, 0))
 
     def _update_cd_target_label(self) -> None:
         """Atualiza o label de destino quando a pasta é alterada."""
@@ -1278,6 +1445,168 @@ class IsaacGUIApp:
         msg = f"✔ {summary['total']} arquivo(s)\nSalvas em: {summary['dest']}"
         self.cd_status.configure(text="✔ Concluído!", fg="#2B9348")
         messagebox.showinfo("Tudo pronto", msg)
+
+    # ── Playlist YouTube ─────────────────────────────────────────────────────────
+
+    def _load_playlist_tracks(self) -> None:
+        """Carrega faixas da playlist via URL ou busca por nome."""
+        query = self.playlist_query.get().strip()
+        if not query:
+            return
+
+        self.playlist_status.config(text="🔍 Buscando faixas...")
+        self.playlist_preview_text.config(state="normal")
+        self.playlist_preview_text.delete("1.0", "end")
+        self.playlist_preview_text.config(state="disabled")
+
+        def worker():
+            from cdripper_utils import fetch_playlist_tracks
+            tracks = fetch_playlist_tracks(query)
+            self.root.after(0, lambda: self._on_playlist_loaded(tracks))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_playlist_loaded(self, tracks: list[dict]) -> None:
+        """Renderiza as faixas no preview após carregar."""
+        if not tracks:
+            self.playlist_status.config(text="⊘ Nenhuma faixa encontrada")
+            return
+
+        self.playlist_tracks = tracks
+        self.playlist_status.config(text=f"✔ {len(tracks)} faixa(s) encontrada(s)")
+
+        # Extrair nome da playlist (primeira palavra do query ou título da primeira faixa)
+        query = self.playlist_query.get().strip()
+        if not query.startswith("http"):
+            playlist_name = query.split("playlist")[0].strip() or "Playlist"
+        else:
+            playlist_name = tracks[0].get("title", "Playlist").split("-")[0].strip() if tracks else "Playlist"
+
+        # Renderizar preview
+        preview_lines = [f"💿 {playlist_name}", "─" * 40]
+        for i, track in enumerate(tracks, 1):
+            duration = track.get("duration_secs", 0)
+            duration_str = f"({int(duration)//60}:{int(duration)%60:02d})" if duration else ""
+            preview_lines.append(f"   {i:02d}. {track['title']:<30} {duration_str}")
+
+        preview_text = "\n".join(preview_lines)
+
+        self.playlist_preview_text.config(state="normal")
+        self.playlist_preview_text.delete("1.0", "end")
+        self.playlist_preview_text.insert("1.0", preview_text)
+        self.playlist_preview_text.config(state="disabled")
+
+    def _start_playlist_download(self) -> None:
+        """Inicia o download sequencial das faixas."""
+        if not self.playlist_tracks:
+            messagebox.showwarning("Aviso", "Carregue uma playlist primeiro!")
+            return
+
+        output_dir = self.playlist_output_entry.get().strip() or "downloads"
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+        self.playlist_cancel = False
+        self.playlist_in_progress = True
+        self.playlist_start_time = time.time()
+
+        # Mostrar barra de progresso, ocultar botão de download
+        self.playlist_progress_frame.pack(fill="x", pady=(10, 0))
+
+        def worker():
+            total = len(self.playlist_tracks)
+            for i, track in enumerate(self.playlist_tracks):
+                if self.playlist_cancel:
+                    break
+
+                title = track.get("title", "Desconhecido")
+                url = track.get("url", "")
+
+                # Atualizar status: baixando
+                self.root.after(0, lambda i=i: self._set_playlist_line(i, "downloading"))
+
+                # Baixar
+                success = download_mp3(url, title, output_dir)
+                status = "done" if success else "failed"
+
+                # Atualizar status final
+                self.root.after(0, lambda i=i, s=status: self._set_playlist_line(i, s))
+
+                # Atualizar progresso
+                self.root.after(0, lambda done=i + 1, t=total: self._update_playlist_progress(done, t))
+
+            # Finalizar
+            self.root.after(0, lambda: self._on_playlist_done())
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _set_playlist_line(self, index: int, status: str) -> None:
+        """Atualiza a linha da faixa no preview com status (downloading/done/failed)."""
+        self.playlist_preview_text.config(state="normal")
+
+        # Encontrar a linha da faixa (linha = index + 2, pois há título e separator antes)
+        line_num = index + 3  # +1 para 1-indexed, +2 para header
+
+        # Ler a linha atual
+        line_start = f"{line_num}.0"
+        line_end = f"{line_num}.end"
+
+        try:
+            line_text = self.playlist_preview_text.get(line_start, line_end)
+        except:
+            self.playlist_preview_text.config(state="disabled")
+            return
+
+        # Extrair número e título
+        import re
+        match = re.match(r"\s+(\d{2})\. (.+)", line_text)
+        if not match:
+            self.playlist_preview_text.config(state="disabled")
+            return
+
+        track_num, track_title = match.groups()
+
+        # Atualizar com novo status
+        if status == "downloading":
+            new_line = f"🎵 {track_num}. {track_title:<33} ← baixando"
+        elif status == "done":
+            new_line = f"✔  {track_num}. {track_title}"
+        else:  # failed
+            new_line = f"⊘  {track_num}. {track_title}"
+
+        self.playlist_preview_text.delete(line_start, line_end)
+        self.playlist_preview_text.insert(line_start, new_line)
+
+        self.playlist_preview_text.config(state="disabled")
+
+    def _update_playlist_progress(self, done: int, total: int) -> None:
+        """Atualiza barra de progresso e informações."""
+        self.playlist_progress_bar["value"] = done
+
+        percent = int((done / total) * 100) if total > 0 else 0
+        self.playlist_progress_percent.config(text=f"{percent}%")
+        self.playlist_progress_count.config(text=f"{done}/{total} faixas")
+
+        # Calcular velocidade e ETA
+        elapsed = time.time() - self.playlist_start_time
+        if elapsed > 0 and done > 0:
+            speed_files_per_sec = done / elapsed
+            remaining_files = total - done
+            eta_secs = remaining_files / speed_files_per_sec if speed_files_per_sec > 0 else 0
+            eta_str = f"~{int(eta_secs)}s restante" if eta_secs > 0 else ""
+            self.playlist_progress_speed.config(text=eta_str)
+
+        self.root.update_idletasks()
+
+    def _on_playlist_done(self) -> None:
+        """Finaliza o download da playlist."""
+        self.playlist_in_progress = False
+        self.playlist_progress_frame.pack_forget()
+        self.playlist_status.config(text="✔ Download concluído!")
+
+    def _cancel_playlist(self) -> None:
+        """Cancela o download da playlist."""
+        self.playlist_cancel = True
+        self.playlist_status.config(text="⊘ Download cancelado")
 
 
 def main() -> None:
