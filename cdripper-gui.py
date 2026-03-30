@@ -1194,26 +1194,49 @@ class IsaacGUIApp:
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _copy_file_with_timeout(self, src: str, dst: str, timeout_secs: float = 5.0) -> bool:
-        """Copia arquivo com timeout. Se demorar mais de timeout_secs, retorna False."""
-        result = {"success": False}
-
-        def copy_worker():
+    def _copy_file_with_timeout(self, src: str, dst: str) -> bool:
+        """
+        Copia arquivo com timeout inteligente.
+        Primeiro testa se consegue ler o arquivo (CD ruim) ou é um arquivo grande legítimo.
+        Timeout dinâmico: ~1MB por segundo.
+        """
+        try:
+            # Teste rápido: tentar ler primeiros 1MB para verificar se é CD danificado
             try:
-                shutil.copy2(src, dst)
-                result["success"] = True
+                with open(src, "rb") as f:
+                    f.read(1024 * 1024)  # Tenta ler 1MB
             except Exception:
-                result["success"] = False
+                # Não consegue ler nem os primeiros bytes = CD danificado
+                return False
 
-        thread = threading.Thread(target=copy_worker, daemon=True)
-        thread.start()
-        thread.join(timeout=timeout_secs)
+            # Conseguiu ler, agora calcula timeout baseado no tamanho
+            try:
+                file_size = os.path.getsize(src)
+                # ~1 segundo por MB, com mínimo de 5s e máximo de 300s
+                timeout_secs = max(5.0, min(300.0, file_size / (1024 * 1024)))
+            except Exception:
+                timeout_secs = 30.0
 
-        # Se a thread ainda está viva após timeout, a cópia foi muito lenta
-        if thread.is_alive():
+            result = {"success": False}
+
+            def copy_worker():
+                try:
+                    shutil.copy2(src, dst)
+                    result["success"] = True
+                except Exception:
+                    result["success"] = False
+
+            thread = threading.Thread(target=copy_worker, daemon=True)
+            thread.start()
+            thread.join(timeout=timeout_secs)
+
+            # Se a thread ainda está viva após timeout, algo deu muito errado
+            if thread.is_alive():
+                return False
+
+            return result["success"]
+        except Exception:
             return False
-
-        return result["success"]
 
     def copy_cd_with_fallback_gui(self, cd_path: str, output_base: str = "downloads") -> dict:
         mp3_map = find_mp3_files(cd_path)
@@ -1268,8 +1291,8 @@ class IsaacGUIApp:
                 title = os.path.splitext(filename)[0].strip()
                 copied = False
 
-                # Tentar copiar do CD (com timeout de 5 segundos)
-                if self._copy_file_with_timeout(src_file, dst_file, timeout_secs=5.0):
+                # Tentar copiar do CD (com teste de leitura + timeout dinâmico)
+                if self._copy_file_with_timeout(src_file, dst_file):
                     try:
                         success += 1
                         # Ler metadados da cópia para exibir capa
