@@ -45,7 +45,7 @@ from cdripper_utils import (
     get_next_cd_number,
     search_youtube,
     get_name_variations,
-
+    validate_mp3_duration,
 )
 
 
@@ -986,20 +986,30 @@ class IsaacGUIApp:
                             if url:
                                 mp3_path = download_mp3(url, title, folder_dest)
                                 if os.path.exists(mp3_path):
-                                    apply_artwork_to_mp3(mp3_path, cd_metadata)
-                                    success += 1
-                                    self.root.after(
-                                        0,
-                                        lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
-                                    )
-                                    self.root.after(0, lambda n=filename: self._update_details_log(f"🎵 YouTube: {n}"))
-                                    self.root.after(
-                                        0,
-                                        lambda m=cd_metadata: self._update_cd_artwork(
-                                            m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
-                                        ),
-                                    )
-                                    copied = True
+                                    # Validar duração antes de aceitar
+                                    cd_duration = cd_metadata.get("duration_secs")
+                                    if cd_duration and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
+                                        # Duração muito errada, deletar e rejeitar
+                                        try:
+                                            os.remove(mp3_path)
+                                        except Exception:
+                                            pass
+                                    else:
+                                        # Duração OK, aceitar arquivo
+                                        apply_artwork_to_mp3(mp3_path, cd_metadata)
+                                        success += 1
+                                        self.root.after(
+                                            0,
+                                            lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
+                                        )
+                                        self.root.after(0, lambda n=filename: self._update_details_log(f"🎵 YouTube: {n}"))
+                                        self.root.after(
+                                            0,
+                                            lambda m=cd_metadata: self._update_cd_artwork(
+                                                m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
+                                            ),
+                                        )
+                                        copied = True
                     except Exception:
                         pass
 
@@ -1029,15 +1039,25 @@ class IsaacGUIApp:
                             if url:
                                 mp3_path = download_mp3(url, filename, folder_dest)
                                 if os.path.exists(mp3_path):
-                                    apply_artwork_to_mp3(mp3_path, cd_metadata)
-                                    success += 1
-                                    self.root.after(
-                                        0,
-                                        lambda m=cd_metadata: self._update_cd_artwork(
-                                            m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
-                                        ),
-                                    )
-                                    break
+                                    # Validar duração antes de aceitar
+                                    cd_duration = cd_metadata.get("duration_secs")
+                                    if cd_duration and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
+                                        # Duração muito errada, deletar e tentar próxima variação
+                                        try:
+                                            os.remove(mp3_path)
+                                        except Exception:
+                                            pass
+                                    else:
+                                        # Duração OK, aceitar arquivo
+                                        apply_artwork_to_mp3(mp3_path, cd_metadata)
+                                        success += 1
+                                        self.root.after(
+                                            0,
+                                            lambda m=cd_metadata: self._update_cd_artwork(
+                                                m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
+                                            ),
+                                        )
+                                        break
                     except Exception:
                         pass
 

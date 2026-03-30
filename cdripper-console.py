@@ -320,6 +320,35 @@ def apply_artwork_to_mp3(mp3_path: str, metadata: dict) -> None:
         pass  # Falha silenciosa para não alarmar usuários
 
 
+def validate_mp3_duration(mp3_path: str, expected_duration_secs: float, tolerance_percent: float = 30) -> bool:
+    """
+    Valida se a duração do arquivo MP3 está dentro de tolerância.
+
+    Args:
+        mp3_path: caminho do arquivo MP3
+        expected_duration_secs: duração esperada em segundos (do CD)
+        tolerance_percent: tolerância em % (padrão 30%)
+
+    Returns:
+        True se duração está OK, False se está muito diferente
+    """
+    try:
+        from mutagen.mp3 import MP3
+
+        audio = MP3(mp3_path)
+        actual_duration = audio.info.length
+
+        # Calcular limites aceitáveis
+        min_acceptable = expected_duration_secs * (1 - tolerance_percent / 100)
+        max_acceptable = expected_duration_secs * (1 + tolerance_percent / 100)
+
+        # Validar se está dentro do intervalo
+        return min_acceptable <= actual_duration <= max_acceptable
+    except Exception:
+        # Se não conseguir ler metadados, rejeitar por segurança
+        return False
+
+
 # ── cópia de CDs ─────────────────────────────────────────────────────────────
 
 def find_cd_drives() -> list[str]:
@@ -458,9 +487,18 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
                         mp3_path = download_mp3(url, file, dest_folder)
 
                         if os.path.exists(mp3_path):
-                            apply_artwork_to_mp3(mp3_path, cd_metadata)
-                            print(c(" ✔", "green"))
-                            copied = True
+                            # Validar duração antes de aceitar
+                            if cd_duration and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
+                                # Duração muito errada, deletar e rejeitar
+                                try:
+                                    os.remove(mp3_path)
+                                except Exception:
+                                    pass
+                            else:
+                                # Duração OK, aceitar arquivo
+                                apply_artwork_to_mp3(mp3_path, cd_metadata)
+                                print(c(" ✔", "green"))
+                                copied = True
                 except Exception:
                     pass
 
@@ -490,9 +528,18 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
                         mp3_path = download_mp3(url, file, dest_folder)
 
                         if os.path.exists(mp3_path):
-                            apply_artwork_to_mp3(mp3_path, cd_metadata)
-                            print(c(" ✔", "green"))
-                            break
+                            # Validar duração antes de aceitar
+                            if cd_duration and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
+                                # Duração muito errada, deletar e tentar próxima variação
+                                try:
+                                    os.remove(mp3_path)
+                                except Exception:
+                                    pass
+                            else:
+                                # Duração OK, aceitar arquivo
+                                apply_artwork_to_mp3(mp3_path, cd_metadata)
+                                print(c(" ✔", "green"))
+                                break
                 except Exception:
                     pass
             else:
