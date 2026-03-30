@@ -1196,24 +1196,35 @@ class IsaacGUIApp:
 
     def _copy_file_with_timeout(self, src: str, dst: str) -> bool:
         """
-        Copia arquivo com timeout inteligente.
-        Primeiro testa se consegue ler o arquivo (CD ruim) ou é um arquivo grande legítimo.
-        Timeout dinâmico: ~1MB por segundo.
+        Copia arquivo com timeout.
+        Teste de leitura rápido (2s) para detectar CD danificado.
+        Se passar, copia com timeout baseado no tamanho (max 60s).
         """
         try:
-            # Teste rápido: tentar ler primeiros 1MB para verificar se é CD danificado
-            try:
-                with open(src, "rb") as f:
-                    f.read(1024 * 1024)  # Tenta ler 1MB
-            except Exception:
-                # Não consegue ler nem os primeiros bytes = CD danificado
+            # Teste rápido: tentar ler primeiros 512KB com timeout de 2s
+            read_result = {"success": False}
+
+            def read_test():
+                try:
+                    with open(src, "rb") as f:
+                        f.read(512 * 1024)  # Lê 512KB
+                    read_result["success"] = True
+                except Exception:
+                    read_result["success"] = False
+
+            thread = threading.Thread(target=read_test, daemon=True)
+            thread.start()
+            thread.join(timeout=2.0)
+
+            if not read_result["success"]:
+                # Teste falhou = CD danificado ou não acessível
                 return False
 
-            # Conseguiu ler, agora calcula timeout baseado no tamanho
+            # Conseguiu ler, agora copia com timeout dinâmico
             try:
                 file_size = os.path.getsize(src)
-                # ~1 segundo por MB, com mínimo de 5s e máximo de 300s
-                timeout_secs = max(5.0, min(300.0, file_size / (1024 * 1024)))
+                # ~0.5 segundos por MB, mínimo 10s, máximo 60s
+                timeout_secs = max(10.0, min(60.0, file_size / (1024 * 1024 * 2)))
             except Exception:
                 timeout_secs = 30.0
 
@@ -1230,7 +1241,7 @@ class IsaacGUIApp:
             thread.start()
             thread.join(timeout=timeout_secs)
 
-            # Se a thread ainda está viva após timeout, algo deu muito errado
+            # Se a thread ainda está viva após timeout
             if thread.is_alive():
                 return False
 
