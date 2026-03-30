@@ -207,6 +207,10 @@ class IsaacGUIApp:
         style.configure("TNotebook.Tab", font=("Arial Rounded MT Bold", 13), padding=(18, 10))
         style.map("TNotebook.Tab", background=[("selected", "#BDE0FE"), ("!selected", "#EAF6FF")])
 
+        # Estilo para o Treeview
+        style.configure("Treeview", font=("Arial", 13), rowheight=28)
+        style.configure("Treeview.Heading", font=("Arial", 12, "bold"))
+
     def _build_header(self) -> None:
         header = tk.Frame(self.root, bg="#CDEBFF", height=110)
         header.pack(fill="x")
@@ -402,11 +406,14 @@ class IsaacGUIApp:
 
         self.nav_tree = ttk.Treeview(
             nav_frame,
-            height=8,
+            height=14,
             yscrollcommand=scrollbar.set,
         )
         self.nav_tree.pack(side="left", fill="both", expand=True)
         scrollbar.config(command=self.nav_tree.yview)
+
+        # Configurar coluna principal com largura apropriada
+        self.nav_tree.column("#0", width=350, minwidth=250)
 
         # Bind para carregar subpastas ao expandir
         self.nav_tree.bind("<<TreeviewOpen>>", self._on_tree_expand)
