@@ -1194,6 +1194,27 @@ class IsaacGUIApp:
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _copy_file_with_timeout(self, src: str, dst: str, timeout_secs: float = 5.0) -> bool:
+        """Copia arquivo com timeout. Se demorar mais de timeout_secs, retorna False."""
+        result = {"success": False}
+
+        def copy_worker():
+            try:
+                shutil.copy2(src, dst)
+                result["success"] = True
+            except Exception:
+                result["success"] = False
+
+        thread = threading.Thread(target=copy_worker, daemon=True)
+        thread.start()
+        thread.join(timeout=timeout_secs)
+
+        # Se a thread ainda está viva após timeout, a cópia foi muito lenta
+        if thread.is_alive():
+            return False
+
+        return result["success"]
+
     def copy_cd_with_fallback_gui(self, cd_path: str, output_base: str = "downloads") -> dict:
         mp3_map = find_mp3_files(cd_path)
         if not mp3_map:
@@ -1247,25 +1268,28 @@ class IsaacGUIApp:
                 title = os.path.splitext(filename)[0].strip()
                 copied = False
 
-                # Tentar copiar do CD
-                try:
-                    shutil.copy2(src_file, dst_file)
-                    success += 1
-                    # Ler metadados da cópia para exibir capa
-                    cd_metadata = get_mp3_metadata(dst_file)
-                    self.root.after(
-                        0,
-                        lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
-                    )
-                    self.root.after(0, lambda n=filename: self._update_details_log(f"✔ CD: {n}"))
-                    self.root.after(
-                        0,
-                        lambda m=cd_metadata: self._update_cd_artwork(
-                            m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
-                        ),
-                    )
-                    copied = True
-                except Exception:
+                # Tentar copiar do CD (com timeout de 5 segundos)
+                if self._copy_file_with_timeout(src_file, dst_file, timeout_secs=5.0):
+                    try:
+                        success += 1
+                        # Ler metadados da cópia para exibir capa
+                        cd_metadata = get_mp3_metadata(dst_file)
+                        self.root.after(
+                            0,
+                            lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
+                        )
+                        self.root.after(0, lambda n=filename: self._update_details_log(f"✔ CD: {n}"))
+                        self.root.after(
+                            0,
+                            lambda m=cd_metadata: self._update_cd_artwork(
+                                m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
+                            ),
+                        )
+                        copied = True
+                    except Exception:
+                        pass
+
+                if not copied:
                     # Se falhar, tenta YouTube imediatamente
                     cd_metadata = get_mp3_metadata(src_file)
                     try:
@@ -1296,7 +1320,7 @@ class IsaacGUIApp:
                                             0,
                                             lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
                                         )
-                                        self.root.after(0, lambda n=filename: self._update_details_log(f"✔ CD: {n}"))
+                                        self.root.after(0, lambda n=filename: self._update_details_log(f"🎵 YouTube: {n}"))
                                         self.root.after(
                                             0,
                                             lambda m=cd_metadata: self._update_cd_artwork(
