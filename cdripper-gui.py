@@ -181,11 +181,11 @@ class IsaacGUIApp:
         self.copying_in_progress: bool = False  # Flag para indicar cópia em andamento
         self.spinner_animation_id: str | None = None  # ID do agendamento de animação
 
-        # Navegação hierárquica de pastas (drives + pastas locais)
-        self.nav_root_items: list[str] = []  # Drives + pastas adicionadas pelo usuário
-        self.nav_level1_path: str | None = None  # Drive/pasta selecionada (nível 0)
-        self.nav_level2_path: str | None = None  # Subpasta selecionada (nível 1)
-        self.nav_selected_source: str | None = None  # Caminho final para cópia
+        # Navegação hierárquica de pastas (Treeview)
+        self.nav_root_items: list[str] = []  # Drives + pastas locais adicionadas
+        self.nav_selected_source: str | None = None  # Caminho selecionado no treeview
+        self.nav_item_to_path: dict[str, str] = {}  # Mapeamento de tree item ID → caminho absoluto
+        self.nav_loaded_items: set[str] = set()  # Tree items já carregados (evita reload)
 
         self._build_styles()
         self._build_header()
@@ -382,76 +382,35 @@ class IsaacGUIApp:
         add_folder_btn.pack(side="left", padx=(12, 0))
 
         # ────────────────────────────────────────────────────────────────────
-        # Navegador hierárquico (3 colunas estilo Miller Columns)
+        # Navegador hierárquico (Treeview)
         # ────────────────────────────────────────────────────────────────────
+        nav_label = tk.Label(
+            container,
+            text="1) Escolha uma pasta",
+            font=self.section_font,
+            bg="#F6FBFF",
+            fg="#6B4E16",
+        )
+        nav_label.pack(anchor="w", pady=(4, 6))
+
         nav_frame = tk.Frame(container, bg="#F6FBFF")
-        nav_frame.pack(fill="both", expand=False, pady=(0, 12))
+        nav_frame.pack(fill="both", expand=True, pady=(0, 12))
 
-        # Coluna 0: Drive/Pasta raiz
-        col0_header = tk.Label(
-            nav_frame,
-            text="1) Drive ou pasta",
-            font=("Arial", 11, "bold"),
-            bg="#F6FBFF",
-            fg="#264653",
-        )
-        col0_header.pack(side="left", padx=(0, 12))
+        # Treeview com scrollbar
+        scrollbar = ttk.Scrollbar(nav_frame)
+        scrollbar.pack(side="right", fill="y")
 
-        self.nav_col0_list = tk.Listbox(
+        self.nav_tree = ttk.Treeview(
             nav_frame,
-            font=("Arial", 11),
-            height=5,
-            width=20,
-            activestyle="none",
-            selectbackground="#FFE8A3",
-            selectforeground="#523200",
+            height=8,
+            yscrollcommand=scrollbar.set,
         )
-        self.nav_col0_list.pack(side="left", fill="both", expand=True, padx=(0, 12))
-        self.nav_col0_list.bind("<<ListboxSelect>>", self._on_col0_select)
+        self.nav_tree.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=self.nav_tree.yview)
 
-        # Coluna 1: Subpasta nível 1
-        col1_header = tk.Label(
-            nav_frame,
-            text="2) Subpasta",
-            font=("Arial", 11, "bold"),
-            bg="#F6FBFF",
-            fg="#264653",
-        )
-        col1_header.pack(side="left", padx=(0, 12))
-
-        self.nav_col1_list = tk.Listbox(
-            nav_frame,
-            font=("Arial", 11),
-            height=5,
-            width=20,
-            activestyle="none",
-            selectbackground="#FFE8A3",
-            selectforeground="#523200",
-        )
-        self.nav_col1_list.pack(side="left", fill="both", expand=True, padx=(0, 12))
-        self.nav_col1_list.bind("<<ListboxSelect>>", self._on_col1_select)
-
-        # Coluna 2: Subpasta nível 2
-        col2_header = tk.Label(
-            nav_frame,
-            text="3) Subpasta",
-            font=("Arial", 11, "bold"),
-            bg="#F6FBFF",
-            fg="#264653",
-        )
-        col2_header.pack(side="left", padx=(0, 12))
-
-        self.nav_col2_list = tk.Listbox(
-            nav_frame,
-            font=("Arial", 11),
-            height=5,
-            width=20,
-            activestyle="none",
-            selectbackground="#FFE8A3",
-            selectforeground="#523200",
-        )
-        self.nav_col2_list.pack(side="left", fill="both", expand=True)
-        self.nav_col2_list.bind("<<ListboxSelect>>", self._on_col2_select)
+        # Bind para carregar subpastas ao expandir
+        self.nav_tree.bind("<<TreeviewOpen>>", self._on_tree_expand)
+        self.nav_tree.bind("<<TreeviewSelect>>", self._on_tree_select)
 
         # ────────────────────────────────────────────────────────────────────
         # Label de source selecionado
@@ -917,59 +876,45 @@ class IsaacGUIApp:
                 self.nav_root_items.append(path)
                 self.nav_col0_list.insert(tk.END, path)
 
-    def _on_col0_select(self, event) -> None:
-        """Seleção na coluna 0 (drives/pastas raiz)."""
-        sel = self.nav_col0_list.curselection()
-        if not sel:
+    def _on_tree_expand(self, event) -> None:
+        """Carrega subpastas ao expandir um nó do treeview."""
+        item = event.widget.focus() if event.widget.focus() else None
+        if not item or item in self.nav_loaded_items:
             return
-        idx = sel[0]
-        self.nav_level1_path = self.nav_root_items[idx]
-        self.nav_level2_path = None
 
-        # Popula coluna 1
-        subdirs = self._list_subdirs(self.nav_level1_path)
-        self.nav_col1_list.delete(0, tk.END)
+        path = self.nav_item_to_path.get(item)
+        if not path:
+            return
+
+        # Remove placeholder se existir
+        children = self.nav_tree.get_children(item)
+        for child in children:
+            if child not in self.nav_item_to_path:  # É placeholder
+                self.nav_tree.delete(child)
+
+        # Carrega subpastas reais
+        subdirs = self._list_subdirs(path)
         for subdir in subdirs:
-            self.nav_col1_list.insert(tk.END, subdir)
+            subdir_path = os.path.join(path, subdir)
+            subitem = self.nav_tree.insert(item, "end", text=subdir)
+            self.nav_item_to_path[subitem] = subdir_path
+            # Se tem sub-subpastas, inserir placeholder
+            if self._list_subdirs(subdir_path):
+                self.nav_tree.insert(subitem, "end")
 
-        # Limpa coluna 2
-        self.nav_col2_list.delete(0, tk.END)
+        self.nav_loaded_items.add(item)
 
-        # Source provisório é a raiz
-        self.nav_selected_source = self.nav_level1_path
-        self._update_source_label()
-        self._refresh_cd_preview()
-
-    def _on_col1_select(self, event) -> None:
-        """Seleção na coluna 1 (subpastas de 1º nível)."""
-        sel = self.nav_col1_list.curselection()
+    def _on_tree_select(self, event) -> None:
+        """Atualiza source e preview ao selecionar um nó."""
+        sel = event.widget.selection()
         if not sel:
             return
-        idx = sel[0]
-        subdir_name = self.nav_col1_list.get(idx)
-        self.nav_level2_path = os.path.join(self.nav_level1_path, subdir_name)
 
-        # Popula coluna 2
-        subdirs = self._list_subdirs(self.nav_level2_path)
-        self.nav_col2_list.delete(0, tk.END)
-        for subdir in subdirs:
-            self.nav_col2_list.insert(tk.END, subdir)
-
-        # Source é nível 2
-        self.nav_selected_source = self.nav_level2_path
-        self._update_source_label()
-        self._refresh_cd_preview()
-
-    def _on_col2_select(self, event) -> None:
-        """Seleção na coluna 2 (subpastas de 2º nível)."""
-        sel = self.nav_col2_list.curselection()
-        if not sel:
+        item = sel[0]
+        path = self.nav_item_to_path.get(item)
+        if not path:
             return
-        idx = sel[0]
-        subdir_name = self.nav_col2_list.get(idx)
-        path = os.path.join(self.nav_level2_path, subdir_name)
 
-        # Source final
         self.nav_selected_source = path
         self.current_cd_path = path
         self._update_source_label()
@@ -1015,24 +960,28 @@ class IsaacGUIApp:
         self.current_drives = drives
 
         # Atualiza nav_root_items: drives + pastas locais já adicionadas
-        if not self.nav_root_items:  # Primeira vez
+        if not self.nav_root_items:
             self.nav_root_items = drives.copy()
-        else:  # Atualiza drives, preserva pastas locais
+        else:
             local_folders = [p for p in self.nav_root_items if p not in drives]
             self.nav_root_items = drives + local_folders
 
-        # Repopula coluna 0
-        self.nav_col0_list.delete(0, tk.END)
-        for item in self.nav_root_items:
-            self.nav_col0_list.insert(tk.END, item)
+        # Repopula treeview
+        self.nav_tree.delete(*self.nav_tree.get_children())
+        self.nav_item_to_path.clear()
+        self.nav_loaded_items.clear()
 
-        # Limpa colunas 1 e 2
-        self.nav_col1_list.delete(0, tk.END)
-        self.nav_col2_list.delete(0, tk.END)
+        for root_path in self.nav_root_items:
+            # Inserir drive/pasta como raiz
+            root_display = os.path.basename(root_path) or root_path
+            root_item = self.nav_tree.insert("", "end", text=root_display)
+            self.nav_item_to_path[root_item] = root_path
+
+            # Se tem subpastas, inserir placeholder vazio para permitir expansão
+            if self._list_subdirs(root_path):
+                self.nav_tree.insert(root_item, "end")
 
         # Reseta state
-        self.nav_level1_path = None
-        self.nav_level2_path = None
         self.nav_selected_source = None
         self.current_cd_path = None
         self._update_source_label()
@@ -1043,7 +992,7 @@ class IsaacGUIApp:
             messagebox.showwarning("Sem CD", "Nenhuma unidade de CD foi encontrada.")
         else:
             self.cd_status.configure(
-                text=f"🎵 {len(drives)} unidade(s) detectada(s). Clique em uma para ver os arquivos.",
+                text=f"🎵 {len(drives)} unidade(s) detectada(s). Expanda para navegar.",
                 fg="#2B9348",
             )
 
