@@ -71,7 +71,7 @@ class Win7ProgressBar(tk.Canvas):
         self.animate_offset = 0
         self.animation_id = None
         self.is_animating = False
-        # Vincular evento de redimensionamento
+        # Vincular evento de redimensionamento¬
         self.bind("<Configure>", self._on_configure)
         self.draw_progress()
 
@@ -1002,7 +1002,7 @@ class IsaacGUIApp:
                                             0,
                                             lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
                                         )
-                                        self.root.after(0, lambda n=filename: self._update_details_log(f"🎵 YouTube: {n}"))
+                                        self.root.after(0, lambda n=filename: self._update_details_log(f"✔ CD: {n}"))
                                         self.root.after(
                                             0,
                                             lambda m=cd_metadata: self._update_cd_artwork(

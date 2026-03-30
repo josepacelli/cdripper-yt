@@ -304,13 +304,6 @@ class API:
 
 def main():
     """Inicia a aplicação web."""
-    # Criar API
-    api = None
-
-    def on_window_created(window):
-        nonlocal api
-        api = API(window)
-
     # Criar janela
     html_file = os.path.join(os.path.dirname(__file__), "web", "index.html")
 
@@ -318,20 +311,29 @@ def main():
         print("Erro: web/index.html não encontrado")
         sys.exit(1)
 
+    # Variável para armazenar a instância de API
+    api_instance = [None]  # Usar list para permitir modificação em closure
+
+    # Criar janela SEM API inicialmente
     window = webview.create_window(
         title="🎵 Isaac Music - Copiar Músicas",
         url=f"file://{html_file}",
-        js_api=None,  # Será definido após criar API
         width=1000,
         height=1200,
         resizable=True,
         background_color="#F5F5F5",
-        on_top=False,
     )
 
-    # Attach API
-    api = API(window)
-    window.expose(api)
+    # Criar instância de API APÓS a janela ser criada
+    if window:
+        api_instance[0] = API(window)
+        # Expor cada método individualmente
+        window.expose(api_instance[0].search_youtube)
+        window.expose(api_instance[0].download_mp3)
+        window.expose(api_instance[0].find_cd_drives)
+        window.expose(api_instance[0].find_mp3_files)
+        window.expose(api_instance[0].copy_cd_with_fallback)
+        window.expose(api_instance[0].browse_folder)
 
     # Iniciar aplicação
     webview.start(debug=False)
