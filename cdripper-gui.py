@@ -208,7 +208,9 @@ class IsaacGUIApp:
         style.map("TNotebook.Tab", background=[("selected", "#BDE0FE"), ("!selected", "#EAF6FF")])
 
         # Estilo para o Treeview
-        style.configure("Treeview", font=("Arial", 13), rowheight=28)
+        # Usar rowheight menor no Linux para evitar texto cortado
+        rowheight = 24 if platform.system() == "Linux" else 28
+        style.configure("Treeview", font=("Arial", 13), rowheight=rowheight)
         style.configure("Treeview.Heading", font=("Arial", 12, "bold"))
 
     def _build_header(self) -> None:
