@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎵 Isaac Music - Copiar Músicas</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🎵 Isaac Music</h1>
+            <p class="subtitle">Copie suas músicas com facilidade!</p>
+        </header>
+
+        <!-- Tabs de navegação -->
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="youtube">
+                🔍 YouTube
+            </button>
+            <button class="tab-btn" data-tab="cd">
+                💿 CD
+            </button>
+        </nav>
+
+        <!-- Tab: YouTube -->
+        <div id="youtube" class="tab-content active">
+            <div class="card">
+                <h2>🔍 Buscar no YouTube</h2>
+
+                <div class="form-group">
+                    <label for="youtube-query">Nome da música:</label>
+                    <input
+                        type="text"
+                        id="youtube-query"
+                        placeholder="Ex: Bohemian Rhapsody Queen"
+                        class="input-large"
+                    >
+                </div>
+
+                <div class="form-group">
+                    <label for="youtube-folder">Salvar em:</label>
+                    <div class="input-group">
+                        <input
+                            type="text"
+                            id="youtube-folder"
+                            value="downloads"
+                            class="input-large"
+                        >
+                        <button class="btn-browse" onclick="browseFolder('youtube-folder')">📁</button>
+                    </div>
+                </div>
+
+                <button class="btn-primary btn-large" onclick="searchYouTube()">
+                    🔍 Buscar
+                </button>
+
+                <div id="youtube-results" class="results-container"></div>
+                <div id="youtube-status" class="status-message"></div>
+            </div>
+        </div>
+
+        <!-- Tab: CD -->
+        <div id="cd" class="tab-content">
+            <div class="card">
+                <h2>💿 Copiar do CD</h2>
+
+                <div class="form-group">
+                    <label for="cd-drive">Unidade de CD:</label>
+                    <select id="cd-drive" class="input-large">
+                        <option value="">Detectando unidades...</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="cd-folder">Salvar em:</label>
+                    <div class="input-group">
+                        <input
+                            type="text"
+                            id="cd-folder"
+                            value="downloads"
+                            class="input-large"
+                        >
+                        <button class="btn-browse" onclick="browseFolder('cd-folder')">📁</button>
+                    </div>
+                </div>
+
+                <button class="btn-primary btn-large" onclick="listCDFiles()">
+                    📂 Listar arquivos
+                </button>
+
+                <div id="cd-files" class="files-container"></div>
+
+                <div id="cd-progress" class="progress-container" style="display: none;">
+                    <div class="progress-bar">
+                        <div id="cd-progress-fill"></div>
+                    </div>
+                    <div class="progress-info">
+                        <span id="cd-progress-text">0%</span>
+                        <span id="cd-current-file">Preparando...</span>
+                    </div>
+                    <div id="cd-artwork-display" class="artwork-display"></div>
+                </div>
+
+                <button class="btn-primary btn-large" id="cd-copy-btn" onclick="copyCDFiles()" style="display: none;">
+                    ✔ Começar cópia
+                </button>
+
+                <div id="cd-status" class="status-message"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

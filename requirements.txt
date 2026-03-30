@@ -7,6 +7,9 @@ colorama>=0.4.6
 mutagen>=1.47.0
 Pillow>=10.0.0
 
-# GUI (cdripper-gui.py)
+# GUI - Tkinter (cdripper-gui.py)
 # tkinter e dependencia de sistema do Python (nao pacote pip).
 # Linux Debian/Ubuntu: sudo apt install python3-tk
+
+# GUI - Web (cdripper-web.py)
+pywebview>=5.0.0
