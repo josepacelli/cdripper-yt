@@ -823,7 +823,7 @@ class IsaacGUIApp:
 
         idx = selected[0]
         item = self.current_results[idx]
-        title = item.get("title") or f"musica_{idx + 1}"
+        title = (item.get("title") or f"musica_{idx + 1}").strip()
         url = item.get("url") or item.get("webpage_url")
         if not url and item.get("id"):
             url = f"https://www.youtube.com/watch?v={item['id']}"
@@ -1069,7 +1069,7 @@ class IsaacGUIApp:
                 done += 1
                 src_file = os.path.join(folder_src, filename)
                 dst_file = os.path.join(folder_dest, filename)
-                title = os.path.splitext(filename)[0]
+                title = os.path.splitext(filename)[0].strip()
                 copied = False
 
                 # Tentar copiar do CD

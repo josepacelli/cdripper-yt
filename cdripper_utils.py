@@ -182,8 +182,12 @@ def validate_mp3_duration(mp3_path: str, expected_duration_secs: float, toleranc
 
 
 def sanitize_filename(name: str) -> str:
-    """Remove caracteres inválidos para nomes de arquivo."""
-    return re.sub(r'[\\/*?:"<>|]', "", name).strip()
+    """Remove caracteres inválidos para nomes de arquivo e espaços extras."""
+    # Remove caracteres inválidos
+    cleaned = re.sub(r'[\\/*?:"<>|]', "", name)
+    # Remove espaços múltiplos e espaços nas pontas
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return cleaned
 
 
 def download_mp3(video_url: str, title: str, output_dir: str = "downloads") -> str:
