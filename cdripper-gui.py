@@ -62,7 +62,7 @@ class AnimatedSpinner:
 
 
 class Win7ProgressBar(tk.Canvas):
-    """Barra de progresso estilo Windows 7 com efeito visual."""
+    """Barra de progresso estilo Windows 7, com efeito visual."""
     def __init__(self, parent, height=30, **kwargs):
         super().__init__(parent, height=height, bg="#F6FBFF", highlightthickness=0, **kwargs)
         self._value = 0
@@ -1060,6 +1060,50 @@ class IsaacGUIApp:
                                         break
                     except Exception:
                         pass
+
+        # Segundo retry: tentar SEM validação rigorosa (fallback mode)
+        # Se nenhuma variação funcionou com duração correta, tentar qualquer coisa
+        for filename, folder_dest, original_title, cd_metadata in failed[:]:
+            # Verificar se ainda está na lista (pode ter sido removido no primeiro retry)
+            if (filename, folder_dest, original_title, cd_metadata) not in failed:
+                continue
+
+            variations = get_name_variations(original_title)
+            cd_duration = cd_metadata.get("duration_secs")
+
+            for var_title in variations[1:]:
+                try:
+                    results = search_youtube(var_title, max_results=5, expected_duration_secs=cd_duration)
+                    if results:
+                        top = results[0]
+                        url = top.get("url") or top.get("webpage_url")
+                        if not url and top.get("id"):
+                            url = f"https://www.youtube.com/watch?v={top['id']}"
+
+                        if url:
+                            mp3_path = download_mp3(url, filename, folder_dest)
+                            if os.path.exists(mp3_path):
+                                # Validação SEM rigor: aceita qualquer duração > 30s
+                                if cd_duration and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30, strict=False):
+                                    # Mesmo em fallback mode, rejeita clipes muito curtos
+                                    try:
+                                        os.remove(mp3_path)
+                                    except Exception:
+                                        pass
+                                else:
+                                    # Fallback mode: aceita mesmo que seja versão diferente
+                                    apply_artwork_to_mp3(mp3_path, cd_metadata)
+                                    success += 1
+                                    self.root.after(
+                                        0,
+                                        lambda m=cd_metadata: self._update_cd_artwork(
+                                            m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
+                                        ),
+                                    )
+                                    failed.remove((filename, folder_dest, original_title, cd_metadata))
+                                    break
+                except Exception:
+                    pass
 
         # Parar animação do spinner
         self.copying_in_progress = False

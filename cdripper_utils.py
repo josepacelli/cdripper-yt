@@ -139,7 +139,7 @@ def apply_artwork_to_mp3(mp3_path: str, metadata: dict) -> None:
         pass  # Falha silenciosa para não alarmar usuários
 
 
-def validate_mp3_duration(mp3_path: str, expected_duration_secs: float, tolerance_percent: float = 30) -> bool:
+def validate_mp3_duration(mp3_path: str, expected_duration_secs: float, tolerance_percent: float = 30, strict: bool = True) -> bool:
     """
     Valida se a duração do arquivo MP3 está dentro de tolerância.
 
@@ -147,16 +147,20 @@ def validate_mp3_duration(mp3_path: str, expected_duration_secs: float, toleranc
         mp3_path: caminho do arquivo MP3
         expected_duration_secs: duração esperada em segundos (do CD)
         tolerance_percent: tolerância em % (padrão 30%)
+        strict: se True, valida rigorosamente; se False, aceita qualquer duração > 30s
 
     Returns:
         True se duração está OK, False se está muito diferente
 
-    Exemplos:
-        validate_mp3_duration("musica.mp3", 90, 30)
+    Exemplos (strict=True):
         CD: 1:30m (90s) → aceita 63s a 117s
         6s → REJEITA (muito curto)
         1:28m (88s) → ACEITA (dentro de ±30%)
         3:00m (180s) → REJEITA (muito longo)
+
+    Exemplos (strict=False, fallback mode):
+        Qualquer duração > 30s é aceita
+        Evita clipes muito curtos (6s)
     """
     try:
         from mutagen.mp3 import MP3
@@ -164,14 +168,14 @@ def validate_mp3_duration(mp3_path: str, expected_duration_secs: float, toleranc
         audio = MP3(mp3_path)
         actual_duration = audio.info.length
 
-        # Calcular limites aceitáveis
-        min_acceptable = expected_duration_secs * (1 - tolerance_percent / 100)
-        max_acceptable = expected_duration_secs * (1 + tolerance_percent / 100)
-
-        # Validar se está dentro do intervalo
-        is_valid = min_acceptable <= actual_duration <= max_acceptable
-
-        return is_valid
+        if strict:
+            # Validação rigorosa: ±X% da duração esperada
+            min_acceptable = expected_duration_secs * (1 - tolerance_percent / 100)
+            max_acceptable = expected_duration_secs * (1 + tolerance_percent / 100)
+            return min_acceptable <= actual_duration <= max_acceptable
+        else:
+            # Fallback mode: aceita qualquer coisa > 30s (evita clipes muito curtos)
+            return actual_duration > 30
     except Exception:
         # Se não conseguir ler metadados, rejeitar por segurança
         return False

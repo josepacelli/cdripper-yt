@@ -546,6 +546,40 @@ def copy_cd_with_fallback(cd_path: str, output_base: str = "downloads") -> None:
                 # Se nenhuma variação funcionou
                 print(c(" ⊘", "yellow"))
 
+    # Segundo retry: tentar SEM validação rigorosa (fallback mode)
+    # Se nenhuma variação funcionou com duração correta, tentar qualquer coisa
+    failed_copy = list(failed)  # Copiar lista para iterar
+    for filename, folder_dest, original_title, cd_metadata in failed_copy:
+        variations = get_name_variations(original_title)
+        cd_duration = cd_metadata.get("duration_secs")
+
+        for var_title in variations[1:]:
+            try:
+                results = search_youtube(var_title, max_results=5, expected_duration_secs=cd_duration)
+                if results:
+                    url = results[0].get("url") or results[0].get("webpage_url") or \
+                          f"https://www.youtube.com/watch?v={results[0]['id']}"
+
+                    mp3_path = download_mp3(url, filename, folder_dest)
+
+                    if os.path.exists(mp3_path):
+                        # Validação SEM rigor: aceita qualquer duração > 30s (fallback mode)
+                        if cd_duration and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30, strict=False):
+                            # Mesmo em fallback, rejeita clipes muito curtos
+                            try:
+                                os.remove(mp3_path)
+                            except Exception:
+                                pass
+                        else:
+                            # Fallback mode: aceita mesmo que seja versão diferente
+                            apply_artwork_to_mp3(mp3_path, cd_metadata)
+                            success += 1
+                            if (filename, folder_dest, original_title, cd_metadata) in failed:
+                                failed.remove((filename, folder_dest, original_title, cd_metadata))
+                            break
+            except Exception:
+                pass
+
     print(c(f"\n  {'─'*60}", "blue"))
     print(c(f"  ✔ Processamento concluído!", "green"))
 
