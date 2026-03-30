@@ -19,7 +19,7 @@ import time
 
 try:
     import tkinter as tk
-    from tkinter import messagebox, ttk
+    from tkinter import messagebox, ttk, filedialog
 except Exception as exc:
     print("Erro: tkinter/_tkinter nao esta disponivel neste Python.")
     print(f"Detalhe: {exc}")
@@ -180,6 +180,12 @@ class IsaacGUIApp:
         self.spinner = AnimatedSpinner()  # Spinner animado
         self.copying_in_progress: bool = False  # Flag para indicar cópia em andamento
         self.spinner_animation_id: str | None = None  # ID do agendamento de animação
+
+        # Navegação hierárquica de pastas (drives + pastas locais)
+        self.nav_root_items: list[str] = []  # Drives + pastas adicionadas pelo usuário
+        self.nav_level1_path: str | None = None  # Drive/pasta selecionada (nível 0)
+        self.nav_level2_path: str | None = None  # Subpasta selecionada (nível 1)
+        self.nav_selected_source: str | None = None  # Caminho final para cópia
 
         self._build_styles()
         self._build_header()
@@ -343,20 +349,15 @@ class IsaacGUIApp:
         container = tk.Frame(self.cd_tab, bg="#F6FBFF")
         container.pack(fill="both", expand=True, padx=12, pady=10)
 
+        # ────────────────────────────────────────────────────────────────────
+        # Botões de ação (Procurar CDs + Adicionar pasta local)
+        # ────────────────────────────────────────────────────────────────────
         top_row = tk.Frame(container, bg="#F6FBFF")
-        top_row.pack(fill="x")
-
-        tk.Label(
-            top_row,
-            text="1) Encontre seu CD",
-            font=self.section_font,
-            bg="#F6FBFF",
-            fg="#6B4E16",
-        ).pack(side="left")
+        top_row.pack(fill="x", pady=(0, 12))
 
         scan_btn = tk.Button(
             top_row,
-            text="💿 Procurar CD",
+            text="💿 Procurar CDs",
             font=self.big_btn_font,
             bg="#FFB703",
             fg="#4A2D00",
@@ -365,51 +366,121 @@ class IsaacGUIApp:
             pady=8,
             command=self.scan_cd_drives,
         )
-        scan_btn.pack(side="right")
+        scan_btn.pack(side="left")
 
-        drives_row = tk.Frame(container, bg="#F6FBFF")
-        drives_row.pack(fill="both", pady=(8, 12))
-
-        self.drives_list = tk.Listbox(
-            drives_row,
-            font=("Arial", 14),
-            height=4,
-            activestyle="none",
-            selectbackground="#FFE8A3",
-            selectforeground="#523200",
-        )
-        self.drives_list.pack(fill="x")
-
-        preview_row = tk.Frame(container, bg="#F6FBFF")
-        preview_row.pack(fill="x", pady=(0, 8))
-
-        preview_btn = tk.Button(
-            preview_row,
-            text="👀 Mostrar músicas do CD",
+        add_folder_btn = tk.Button(
+            top_row,
+            text="📁 Adicionar pasta local",
             font=self.big_btn_font,
             bg="#8ECAE6",
             fg="#09324C",
             activebackground="#74B7D6",
             padx=20,
             pady=8,
-            command=self.preview_cd,
+            command=self._add_local_folder,
         )
-        preview_btn.pack(side="left")
+        add_folder_btn.pack(side="left", padx=(12, 0))
 
-        # Input para pasta de destino
-        path_frame = tk.Frame(preview_row, bg="#F6FBFF")
-        path_frame.pack(side="right", fill="x", expand=False, padx=(10, 0))
+        # ────────────────────────────────────────────────────────────────────
+        # Navegador hierárquico (3 colunas estilo Miller Columns)
+        # ────────────────────────────────────────────────────────────────────
+        nav_frame = tk.Frame(container, bg="#F6FBFF")
+        nav_frame.pack(fill="both", expand=False, pady=(0, 12))
+
+        # Coluna 0: Drive/Pasta raiz
+        col0_header = tk.Label(
+            nav_frame,
+            text="1) Drive ou pasta",
+            font=("Arial", 11, "bold"),
+            bg="#F6FBFF",
+            fg="#264653",
+        )
+        col0_header.pack(side="left", padx=(0, 12))
+
+        self.nav_col0_list = tk.Listbox(
+            nav_frame,
+            font=("Arial", 11),
+            height=5,
+            width=20,
+            activestyle="none",
+            selectbackground="#FFE8A3",
+            selectforeground="#523200",
+        )
+        self.nav_col0_list.pack(side="left", fill="both", expand=True, padx=(0, 12))
+        self.nav_col0_list.bind("<<ListboxSelect>>", self._on_col0_select)
+
+        # Coluna 1: Subpasta nível 1
+        col1_header = tk.Label(
+            nav_frame,
+            text="2) Subpasta",
+            font=("Arial", 11, "bold"),
+            bg="#F6FBFF",
+            fg="#264653",
+        )
+        col1_header.pack(side="left", padx=(0, 12))
+
+        self.nav_col1_list = tk.Listbox(
+            nav_frame,
+            font=("Arial", 11),
+            height=5,
+            width=20,
+            activestyle="none",
+            selectbackground="#FFE8A3",
+            selectforeground="#523200",
+        )
+        self.nav_col1_list.pack(side="left", fill="both", expand=True, padx=(0, 12))
+        self.nav_col1_list.bind("<<ListboxSelect>>", self._on_col1_select)
+
+        # Coluna 2: Subpasta nível 2
+        col2_header = tk.Label(
+            nav_frame,
+            text="3) Subpasta",
+            font=("Arial", 11, "bold"),
+            bg="#F6FBFF",
+            fg="#264653",
+        )
+        col2_header.pack(side="left", padx=(0, 12))
+
+        self.nav_col2_list = tk.Listbox(
+            nav_frame,
+            font=("Arial", 11),
+            height=5,
+            width=20,
+            activestyle="none",
+            selectbackground="#FFE8A3",
+            selectforeground="#523200",
+        )
+        self.nav_col2_list.pack(side="left", fill="both", expand=True)
+        self.nav_col2_list.bind("<<ListboxSelect>>", self._on_col2_select)
+
+        # ────────────────────────────────────────────────────────────────────
+        # Label de source selecionado
+        # ────────────────────────────────────────────────────────────────────
+        self.cd_source_label = tk.Label(
+            container,
+            text="Nenhuma pasta selecionada",
+            font=("Arial", 12, "bold"),
+            bg="#F6FBFF",
+            fg="#666666",
+        )
+        self.cd_source_label.pack(anchor="w", pady=(0, 8))
+
+        # ────────────────────────────────────────────────────────────────────
+        # Destino da cópia
+        # ────────────────────────────────────────────────────────────────────
+        dest_row = tk.Frame(container, bg="#F6FBFF")
+        dest_row.pack(fill="x", pady=(0, 8))
 
         tk.Label(
-            path_frame,
-            text="Pasta:",
+            dest_row,
+            text="Pasta destino:",
             font=("Arial", 12, "bold"),
             bg="#F6FBFF",
             fg="#264653",
         ).pack(side="left", padx=(0, 8))
 
         self.cd_output_entry = tk.Entry(
-            path_frame,
+            dest_row,
             font=("Arial", 12),
             bg="white",
             fg="#333333",
@@ -417,19 +488,17 @@ class IsaacGUIApp:
         )
         self.cd_output_entry.pack(side="left")
         self.cd_output_entry.insert(0, "downloads")
-        # Atualizar label quando o usuário digita
         self.cd_output_entry.bind("<KeyRelease>", lambda e: self._update_cd_target_label())
 
         self.cd_target_label = tk.Label(
-            preview_row,
+            dest_row,
             text="",
             font=("Arial", 13, "bold"),
             bg="#F6FBFF",
             fg="#264653",
         )
-        self.cd_target_label.pack(side="right", padx=(10, 0))
+        self.cd_target_label.pack(side="left", padx=(10, 0))
 
-        # Inicializar label com o valor padrão
         self._update_cd_target_label()
 
         tk.Label(
@@ -828,59 +897,160 @@ class IsaacGUIApp:
         # Falha silenciosa — não mostrar erro ao usuário
         self.youtube_status.configure(text="", fg="#333333")
 
+    # ── Navegação hierárquica de pastas ──────────────────────────────────────
+
+    def _list_subdirs(self, path: str) -> list[str]:
+        """Retorna subpastas ordenadas de um diretório, ignorando ocultas."""
+        try:
+            return sorted([
+                d for d in os.listdir(path)
+                if os.path.isdir(os.path.join(path, d)) and not d.startswith(".")
+            ])
+        except (PermissionError, FileNotFoundError):
+            return []
+
+    def _add_local_folder(self) -> None:
+        """Permite ao usuário adicionar uma pasta local ao navegador."""
+        path = filedialog.askdirectory(title="Escolha uma pasta de músicas")
+        if path:
+            if path not in self.nav_root_items:
+                self.nav_root_items.append(path)
+                self.nav_col0_list.insert(tk.END, path)
+
+    def _on_col0_select(self, event) -> None:
+        """Seleção na coluna 0 (drives/pastas raiz)."""
+        sel = self.nav_col0_list.curselection()
+        if not sel:
+            return
+        idx = sel[0]
+        self.nav_level1_path = self.nav_root_items[idx]
+        self.nav_level2_path = None
+
+        # Popula coluna 1
+        subdirs = self._list_subdirs(self.nav_level1_path)
+        self.nav_col1_list.delete(0, tk.END)
+        for subdir in subdirs:
+            self.nav_col1_list.insert(tk.END, subdir)
+
+        # Limpa coluna 2
+        self.nav_col2_list.delete(0, tk.END)
+
+        # Source provisório é a raiz
+        self.nav_selected_source = self.nav_level1_path
+        self._update_source_label()
+        self._refresh_cd_preview()
+
+    def _on_col1_select(self, event) -> None:
+        """Seleção na coluna 1 (subpastas de 1º nível)."""
+        sel = self.nav_col1_list.curselection()
+        if not sel:
+            return
+        idx = sel[0]
+        subdir_name = self.nav_col1_list.get(idx)
+        self.nav_level2_path = os.path.join(self.nav_level1_path, subdir_name)
+
+        # Popula coluna 2
+        subdirs = self._list_subdirs(self.nav_level2_path)
+        self.nav_col2_list.delete(0, tk.END)
+        for subdir in subdirs:
+            self.nav_col2_list.insert(tk.END, subdir)
+
+        # Source é nível 2
+        self.nav_selected_source = self.nav_level2_path
+        self._update_source_label()
+        self._refresh_cd_preview()
+
+    def _on_col2_select(self, event) -> None:
+        """Seleção na coluna 2 (subpastas de 2º nível)."""
+        sel = self.nav_col2_list.curselection()
+        if not sel:
+            return
+        idx = sel[0]
+        subdir_name = self.nav_col2_list.get(idx)
+        path = os.path.join(self.nav_level2_path, subdir_name)
+
+        # Source final
+        self.nav_selected_source = path
+        self.current_cd_path = path
+        self._update_source_label()
+        self._refresh_cd_preview()
+
+    def _update_source_label(self) -> None:
+        """Atualiza o label que mostra o source selecionado."""
+        if self.nav_selected_source:
+            display_text = f"Source: {self.nav_selected_source}"
+        else:
+            display_text = "Nenhuma pasta selecionada"
+        self.cd_source_label.configure(text=display_text)
+
+    def _refresh_cd_preview(self) -> None:
+        """Atualiza preview dos arquivos MP3 da pasta selecionada."""
+        if not self.nav_selected_source:
+            self._set_cd_preview_text("Selecione uma pasta para ver os arquivos.")
+            return
+
+        try:
+            mp3_map = find_mp3_files(self.nav_selected_source)
+            if not mp3_map:
+                self._set_cd_preview_text("Nenhum arquivo MP3 encontrado nesta pasta.")
+                return
+
+            lines = [f"Pasta: {self.nav_selected_source}\n", "Arquivos encontrados:\n"]
+            total = 0
+            for folder, files in sorted(mp3_map.items()):
+                folder_label = "[Raiz]" if folder == "." else folder
+                lines.append(f"\n{folder_label}:\n")
+                for name in sorted(files):
+                    lines.append(f"  ✔ {name}\n")
+                    total += 1
+
+            lines.append(f"\nTotal: {total} arquivo(s)")
+            self._set_cd_preview_text("".join(lines))
+            self.cd_status.configure(text=f"🎵 {total} arquivo(s) pronto(s) para copiar", fg="#2B9348")
+        except Exception:
+            self._set_cd_preview_text("Erro ao ler a pasta selecionada.")
+
     def scan_cd_drives(self) -> None:
         drives = find_cd_drives()
         self.current_drives = drives
-        self.drives_list.delete(0, tk.END)
+
+        # Atualiza nav_root_items: drives + pastas locais já adicionadas
+        if not self.nav_root_items:  # Primeira vez
+            self.nav_root_items = drives.copy()
+        else:  # Atualiza drives, preserva pastas locais
+            local_folders = [p for p in self.nav_root_items if p not in drives]
+            self.nav_root_items = drives + local_folders
+
+        # Repopula coluna 0
+        self.nav_col0_list.delete(0, tk.END)
+        for item in self.nav_root_items:
+            self.nav_col0_list.insert(tk.END, item)
+
+        # Limpa colunas 1 e 2
+        self.nav_col1_list.delete(0, tk.END)
+        self.nav_col2_list.delete(0, tk.END)
+
+        # Reseta state
+        self.nav_level1_path = None
+        self.nav_level2_path = None
+        self.nav_selected_source = None
+        self.current_cd_path = None
+        self._update_source_label()
+        self._set_cd_preview_text("")
 
         if not drives:
-            # Falha silenciosa — nenhuma unidade encontrada
-            self.cd_status.configure(text="", fg="#333333")
+            self.cd_status.configure(text="Nenhuma unidade de CD detectada", fg="#8D3B2A")
             messagebox.showwarning("Sem CD", "Nenhuma unidade de CD foi encontrada.")
-            return
+        else:
+            self.cd_status.configure(
+                text=f"🎵 {len(drives)} unidade(s) detectada(s). Clique em uma para ver os arquivos.",
+                fg="#2B9348",
+            )
 
-        for drive in drives:
-            self.drives_list.insert(tk.END, drive)
-
-        self.cd_status.configure(
-            text="Agora selecione a unidade e clique em 'Mostrar músicas do CD'.",
-            fg="#8D3B2A",
-        )
-
-    def preview_cd(self) -> None:
-        selected = self.drives_list.curselection()
-        if not selected:
-            messagebox.showwarning("Escolha uma unidade", "Selecione uma unidade de CD na lista.")
-            return
-
-        drive_path = self.current_drives[selected[0]]
-        self.current_cd_path = drive_path
-
-        mp3_map = find_mp3_files(drive_path)
-        if not mp3_map:
-            # Falha silenciosa — nenhum MP3 encontrado
-            self._set_cd_preview_text("")
-            self.cd_status.configure(text="", fg="#333333")
-            return
-
-        lines = [f"CD selecionado: {drive_path}\n", "Arquivos encontrados:\n"]
-        total = 0
-        for folder, files in sorted(mp3_map.items()):
-            folder_label = "[Raiz]" if folder == "." else folder
-            lines.append(f"\nPasta: {folder_label}\n")
-            for name in sorted(files):
-                lines.append(f"  - {name}\n")
-                total += 1
-
-        lines.append(f"\nTotal: {total} arquivo(s) MP3\n")
-        lines.append("\nSe tudo estiver certo, clique em 'Copiar para downloads/cdX'.\n")
-
-        self._set_cd_preview_text("".join(lines))
-        self.cd_status.configure(text="Prévia pronta. Pode iniciar a cópia.", fg="#2B9348")
 
     def start_copy_cd(self) -> None:
         if not self.current_cd_path:
-            messagebox.showwarning("Falta prévia", "Primeiro clique em 'Mostrar músicas do CD'.")
+            messagebox.showwarning("Falta seleção", "Selecione uma pasta na navegação acima.")
             return
 
         confirm = messagebox.askyesno(
