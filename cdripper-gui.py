@@ -490,7 +490,7 @@ class IsaacGUIApp:
         self.cd_preview_text = tk.Text(
             container,
             font=("Courier", 12),
-            height=14,
+            height=8,
             wrap="word",
             bg="#FFFFFF",
             fg="#333333",
