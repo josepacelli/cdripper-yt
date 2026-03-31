@@ -1324,6 +1324,13 @@ class IsaacGUIApp:
                         pass
 
                 if not copied:
+                    # Deletar arquivo corrompido/incompleto da tentativa de cópia
+                    try:
+                        if os.path.exists(dst_file):
+                            os.remove(dst_file)
+                    except Exception:
+                        pass
+
                     # Se falhar, tenta YouTube imediatamente
                     cd_metadata = get_mp3_metadata(src_file)
                     try:
