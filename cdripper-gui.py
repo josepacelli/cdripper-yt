@@ -1336,6 +1336,12 @@ class IsaacGUIApp:
                     try:
                         cd_duration = cd_metadata.get("duration_secs")
                         results = search_youtube(title, max_results=5, expected_duration_secs=cd_duration)
+
+                        # Se não encontrar pela faixa, tenta pelo artista/pasta pai
+                        if not results and rel_folder and rel_folder != ".":
+                            parent_name = os.path.basename(rel_folder)
+                            results = search_youtube(parent_name, max_results=5, expected_duration_secs=cd_duration)
+
                         if results:
                             top = results[0]
                             url = top.get("url") or top.get("webpage_url")
@@ -1378,17 +1384,26 @@ class IsaacGUIApp:
                         lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
                     )
                     self.root.after(0, lambda n=filename: self._update_details_log(f"⊘ {n}"))
-                    failed.append((filename, folder_dest, title, cd_metadata))
+                    failed.append((filename, folder_dest, title, cd_metadata, rel_folder))
 
         # Retry com variações de nome para arquivos que falharam
         if failed:
-            for filename, folder_dest, original_title, cd_metadata in failed:
+            for item in failed:
+                filename, folder_dest, original_title, cd_metadata = item[:4]
+                rel_folder = item[4] if len(item) > 4 else "."
+
                 variations = get_name_variations(original_title)
                 cd_duration = cd_metadata.get("duration_secs")
 
                 for var_title in variations[1:]:
                     try:
                         results = search_youtube(var_title, max_results=5, expected_duration_secs=cd_duration)
+
+                        # Se não encontrar pela variação, tenta pelo artista/pasta pai
+                        if not results and rel_folder and rel_folder != ".":
+                            parent_name = os.path.basename(rel_folder)
+                            results = search_youtube(parent_name, max_results=5, expected_duration_secs=cd_duration)
+
                         if results:
                             top = results[0]
                             url = top.get("url") or top.get("webpage_url")
@@ -1422,10 +1437,9 @@ class IsaacGUIApp:
 
         # Segundo retry: tentar SEM validação rigorosa (fallback mode)
         # Se nenhuma variação funcionou com duração correta, tentar qualquer coisa
-        for filename, folder_dest, original_title, cd_metadata in failed[:]:
-            # Verificar se ainda está na lista (pode ter sido removido no primeiro retry)
-            if (filename, folder_dest, original_title, cd_metadata) not in failed:
-                continue
+        for item in failed[:]:
+            filename, folder_dest, original_title, cd_metadata = item[:4]
+            rel_folder = item[4] if len(item) > 4 else "."
 
             variations = get_name_variations(original_title)
             cd_duration = cd_metadata.get("duration_secs")
@@ -1433,6 +1447,12 @@ class IsaacGUIApp:
             for var_title in variations[1:]:
                 try:
                     results = search_youtube(var_title, max_results=5, expected_duration_secs=cd_duration)
+
+                    # Se não encontrar pela variação, tenta pelo artista/pasta pai
+                    if not results and rel_folder and rel_folder != ".":
+                        parent_name = os.path.basename(rel_folder)
+                        results = search_youtube(parent_name, max_results=5, expected_duration_secs=cd_duration)
+
                     if results:
                         top = results[0]
                         url = top.get("url") or top.get("webpage_url")
@@ -1459,7 +1479,7 @@ class IsaacGUIApp:
                                             m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
                                         ),
                                     )
-                                    failed.remove((filename, folder_dest, original_title, cd_metadata))
+                                    failed.remove(item)
                                     break
                 except Exception:
                     pass
