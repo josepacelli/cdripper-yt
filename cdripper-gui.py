@@ -504,32 +504,37 @@ class IsaacGUIApp:
         self.cd_progress_frame = tk.Frame(container, bg="#F6FBFF")
         self.cd_progress_frame.pack(fill="x", pady=(10, 0))
 
-        # Frame horizontal: imagem à esquerda + nome do arquivo à direita
-        artwork_row = tk.Frame(self.cd_progress_frame, bg="#F6FBFF")
-        artwork_row.pack(fill="x", pady=(0, 8))
+        # Frame com diretório de origem + nome do arquivo
+        info_frame = tk.Frame(self.cd_progress_frame, bg="#F6FBFF")
+        info_frame.pack(fill="x", pady=(0, 8))
 
-        # Label para capa de álbum (48x48, placeholder cinza)
-        self.cd_artwork_label = tk.Label(
-            artwork_row,
-            bg="#E8E8E8",
-            width=6,
-            height=3,
-            relief="flat",
-        )
-        self.cd_artwork_label.pack(side="left", padx=(0, 12))
-        self.cd_artwork_photo = None  # Referência para evitar garbage collection
-
-        # Nome do arquivo à direita
-        self.cd_current_file_label = tk.Label(
-            artwork_row,
+        # Diretório de origem
+        self.cd_source_dir_label = tk.Label(
+            info_frame,
             text="",
-            font=("Arial", 14, "bold"),
+            font=("Arial", 10),
+            bg="#F6FBFF",
+            fg="#666666",
+            anchor="w",
+            justify="left",
+        )
+        self.cd_source_dir_label.pack(fill="x", anchor="w")
+
+        # Nome do arquivo
+        self.cd_current_file_label = tk.Label(
+            info_frame,
+            text="",
+            font=("Arial", 13, "bold"),
             bg="#F6FBFF",
             fg="#333333",
             anchor="w",
             justify="left",
         )
-        self.cd_current_file_label.pack(side="left", fill="x", expand=True)
+        self.cd_current_file_label.pack(fill="x", anchor="w")
+
+        # Placeholder para artwork (mantido para compatibilidade, mas oculto)
+        self.cd_artwork_label = tk.Label(self.cd_progress_frame)
+        self.cd_artwork_photo = None  # Referência para evitar garbage collection
 
         self.cd_progress_bar = Win7ProgressBar(
             self.cd_progress_frame,
@@ -820,21 +825,26 @@ class IsaacGUIApp:
         self.cd_progress_bar["value"] = 0
         self.cd_progress_bar.start_animation()  # Iniciar animação da barra
         self.cd_current_file_label.configure(text="Iniciando…")
+        self.cd_source_dir_label.configure(text="")
         self.cd_progress_percent.configure(text="0%")
         self.cd_progress_count.configure(text=f"0/{total} arquivos")
-        self._update_cd_artwork(None)  # Limpar imagem para placeholder
 
     def _hide_progress_bar(self) -> None:
         """Oculta a barra de progresso e mostra o preview text."""
         self.cd_progress_bar.stop_animation()  # Parar animação da barra
-        self._update_cd_artwork(None)  # Limpar imagem
         self.cd_progress_frame.pack_forget()
         self.cd_preview_text.pack(fill="both", expand=True)
 
-    def _update_progress(self, done: int, total: int, filename: str = "") -> None:
-        """Atualiza a barra de progresso com velocidade e ETA."""
+    def _update_progress(self, done: int, total: int, filename: str = "", source_dir: str = "") -> None:
+        """Atualiza a barra de progresso com velocidade, ETA e diretório de origem."""
         pct = int((done / total * 100)) if total > 0 else 0
         self.cd_progress_bar["value"] = done
+
+        # Mostrar diretório de origem e nome do arquivo
+        if source_dir:
+            self.cd_source_dir_label.configure(text=f"Source: {source_dir}")
+        if filename:
+            self.cd_current_file_label.configure(text=f"Arquivo: {filename}")
 
         # Calcular velocidade e ETA
         elapsed = time.time() - self.copy_start_time
@@ -1311,7 +1321,7 @@ class IsaacGUIApp:
                         cd_metadata = get_mp3_metadata(dst_file)
                         self.root.after(
                             0,
-                            lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
+                            lambda d=done, t=total, n=filename, s=folder_src: self._update_progress(d, t, n, s),
                         )
                         self.root.after(0, lambda n=filename: self._update_details_log(f"✔ CD: {n}"))
                         self.root.after(
@@ -1368,7 +1378,7 @@ class IsaacGUIApp:
                                         success += 1
                                         self.root.after(
                                             0,
-                                            lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
+                                            lambda d=done, t=total, n=filename, s=folder_src: self._update_progress(d, t, n, s),
                                         )
                                         self.root.after(0, lambda n=filename: self._update_details_log(f"✔ CD: {n}"))
                                         self.root.after(
@@ -1384,7 +1394,7 @@ class IsaacGUIApp:
                 if not copied:
                     self.root.after(
                         0,
-                        lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
+                        lambda d=done, t=total, n=filename, s=folder_src: self._update_progress(d, t, n, s),
                     )
                     self.root.after(0, lambda n=filename: self._update_details_log(f"✔ CD: {n}"))
                     failed.append((filename, folder_dest, title, cd_metadata, rel_folder))
