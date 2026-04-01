@@ -190,18 +190,34 @@ def sanitize_filename(name: str) -> str:
     return cleaned
 
 
-def download_mp3(video_url: str, title: str, output_dir: str = "downloads") -> str:
+def download_mp3(video_url: str, title: str, output_dir: str = "downloads", progress_callback=None) -> str:
     """Baixa o vídeo e converte para MP3."""
     os.makedirs(output_dir, exist_ok=True)
     safe_title = sanitize_filename(title)
     output_path = os.path.join(output_dir, f"{safe_title}.%(ext)s")
+
+    # Usar callback customizado se fornecido, caso contrário usar hook de console
+    progress_hooks = []
+    if progress_callback:
+        class CallbackProgressHook:
+            def __init__(self, cb):
+                self.callback = cb
+            def __call__(self, d):
+                if d.get("status") == "downloading":
+                    total = d.get("total_bytes") or d.get("total_bytes_estimate") or 1
+                    downloaded = d.get("downloaded_bytes", 0)
+                    pct = (downloaded / total * 100) if total > 0 else 0
+                    self.callback(pct)
+        progress_hooks = [CallbackProgressHook(progress_callback)]
+    else:
+        progress_hooks = [ProgressHook()]
 
     ydl_opts = {
         "format": "bestaudio/best",
         "outtmpl": output_path,
         "quiet": True,
         "no_warnings": True,
-        "progress_hooks": [ProgressHook()],
+        "progress_hooks": progress_hooks,
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
