@@ -1797,6 +1797,10 @@ class IsaacGUIApp:
                                         )
                                         self.root.after(
                                             0,
+                                            lambda n=filename: self._update_details_log(f"🎵 YouTube: {n}"),
+                                        )
+                                        self.root.after(
+                                            0,
                                             lambda m=cd_metadata: self._update_cd_artwork(
                                                 m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
                                             ),
@@ -1861,6 +1865,10 @@ class IsaacGUIApp:
                                         success += 1
                                         self.root.after(
                                             0,
+                                            lambda n=filename: self._update_details_log(f"🎵 YouTube (var): {n}"),
+                                        )
+                                        self.root.after(
+                                            0,
                                             lambda m=cd_metadata: self._update_cd_artwork(
                                                 m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
                                             ),
@@ -1909,6 +1917,10 @@ class IsaacGUIApp:
                                     # Enriquecer tags com metadados do YouTube
                                     enrich_mp3_from_internet(mp3_path, url=url)
                                     success += 1
+                                    self.root.after(
+                                        0,
+                                        lambda n=filename: self._update_details_log(f"🎵 YouTube (fallback): {n}"),
+                                    )
                                     self.root.after(
                                         0,
                                         lambda m=cd_metadata: self._update_cd_artwork(
