@@ -1316,6 +1316,13 @@ class IsaacGUIApp:
                 # Tentar copiar do CD (com teste de leitura + timeout dinâmico)
                 if self._copy_file_with_timeout(src_file, dst_file):
                     try:
+                        # Remover espaços antes da extensão .mp3
+                        base, ext = os.path.splitext(dst_file)
+                        dst_file_clean = base.rstrip() + ext
+                        if dst_file != dst_file_clean and os.path.exists(dst_file):
+                            os.rename(dst_file, dst_file_clean)
+                            dst_file = dst_file_clean
+
                         success += 1
                         # Ler metadados da cópia para exibir capa
                         cd_metadata = get_mp3_metadata(dst_file)
