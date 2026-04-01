@@ -1283,6 +1283,18 @@ class IsaacGUIApp:
 
         total = sum(len(files) for files in mp3_map.values())
 
+        # Debug: log all files to be processed
+        print("\n" + "="*70)
+        print(f"DEBUG COPY: Total de {total} arquivo(s) para processar")
+        print("="*70)
+        for rel_folder in sorted(mp3_map.keys()):
+            files = mp3_map[rel_folder]
+            folder_label = "[Raiz]" if rel_folder == "." else rel_folder
+            print(f"\nPasta: {folder_label}")
+            for i, fname in enumerate(sorted(files), 1):
+                print(f"  {i:02d}. {fname}")
+        print("="*70 + "\n")
+
         # Mostrar progress frame e ocultar preview text
         self.cancel_copy = False  # Resetar flag de cancelamento
         self.copying_in_progress = True  # Iniciar animação
@@ -1322,8 +1334,12 @@ class IsaacGUIApp:
                 title = os.path.splitext(filename)[0].strip()
                 copied = False
 
+                # Debug: log cada arquivo sendo processado
+                print(f"[{done:02d}/{total}] Processando: {filename}")
+
                 # Tentar copiar do CD (com teste de leitura + timeout dinâmico)
                 if self._copy_file_with_timeout(src_file, dst_file):
+                    print(f"  → CD: SUCESSO")
                     try:
                         # Remover espaços antes da extensão .mp3
                         base, ext = os.path.splitext(dst_file)
@@ -1349,6 +1365,8 @@ class IsaacGUIApp:
                         copied = True
                     except Exception:
                         pass
+                else:
+                    print(f"  → CD: FALHOU - tentando YouTube...")
 
                 if not copied:
                     # Deletar arquivo corrompido/incompleto da tentativa de cópia
@@ -1362,32 +1380,40 @@ class IsaacGUIApp:
                     cd_metadata = get_mp3_metadata(src_file)
                     try:
                         cd_duration = cd_metadata.get("duration_secs")
+                        print(f"  → YouTube: buscando '{title}' (duração: {cd_duration:.1f}s)")
                         results = search_youtube(title, max_results=5, expected_duration_secs=cd_duration)
 
                         # Se não encontrar pela faixa, tenta pelo artista/pasta pai
                         if not results and rel_folder and rel_folder != ".":
                             parent_name = os.path.basename(rel_folder)
+                            print(f"  → YouTube: faixa não encontrada, tentando pasta pai '{parent_name}'")
                             results = search_youtube(parent_name, max_results=5, expected_duration_secs=cd_duration)
 
                         if results:
+                            print(f"  → YouTube: {len(results)} resultado(s) encontrado(s)")
                             top = results[0]
                             url = top.get("url") or top.get("webpage_url")
                             if not url and top.get("id"):
                                 url = f"https://www.youtube.com/watch?v={top['id']}"
 
                             if url:
+                                print(f"  → YouTube: baixando {url}")
+                        else:
+                            print(f"  → YouTube: NENHUM RESULTADO ENCONTRADO")
                                 mp3_path = download_mp3(url, title, folder_dest)
                                 if os.path.exists(mp3_path):
                                     # Validar duração antes de aceitar
                                     cd_duration = cd_metadata.get("duration_secs")
                                     if cd_duration and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
                                         # Duração muito errada, deletar e rejeitar
+                                        print(f"  → YouTube: REJEITADO - duração não corresponde")
                                         try:
                                             os.remove(mp3_path)
                                         except Exception:
                                             pass
                                     else:
                                         # Duração OK, aceitar arquivo
+                                        print(f"  → YouTube: SUCESSO")
                                         apply_artwork_to_mp3(mp3_path, cd_metadata)
                                         # Enriquecer tags com metadados do YouTube
                                         enrich_mp3_from_internet(mp3_path, url=url)
@@ -1407,12 +1433,15 @@ class IsaacGUIApp:
                         pass
 
                 if not copied:
+                    print(f"  → FALHOU: adicionado à fila de retry")
                     self.root.after(
                         0,
                         lambda d=done, t=total, n=filename, s=folder_src: self._update_progress(d, t, n, s),
                     )
                     self.root.after(0, lambda n=filename: self._update_details_log(f"✔ CD: {n}"))
                     failed.append((filename, folder_dest, title, cd_metadata, rel_folder))
+                else:
+                    print(f"  ✔ SUCESSO")
 
         # Retry com variações de nome para arquivos que falharam
         if failed:
@@ -1545,6 +1574,15 @@ class IsaacGUIApp:
             for item in failed:
                 filename = item[0]
                 self.root.after(0, lambda n=filename: self._update_details_log(f"✔ CD: {n}"))
+
+        # Debug: resumo final
+        print("\n" + "="*70)
+        print(f"DEBUG SUMMARY: {success} de {total} arquivo(s) processado(s)")
+        if failed:
+            print(f"Faixas que ficaram incompletas ({len(failed)}):")
+            for item in failed:
+                print(f"  - {item[0]}")
+        print("="*70 + "\n")
 
         self.root.after(0, lambda: self._set_cd_preview_text(summary_text))
         self.root.after(0, lambda: self.cd_cancel_btn.configure(state="normal", text="⛔ Cancelar"))
