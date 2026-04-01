@@ -430,7 +430,7 @@ def identify_with_acoustid(mp3_path: str) -> dict:
     try:
         # Fazer fingerprint do áudio
         results = acoustid.match(
-            "cdripper-yt",
+            "JZ9NuBstfD",
             mp3_path,
             parse=False,
             meta="recordings releases",
