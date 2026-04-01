@@ -1386,7 +1386,7 @@ class IsaacGUIApp:
                         0,
                         lambda d=done, t=total, n=filename: self._update_progress(d, t, n),
                     )
-                    self.root.after(0, lambda n=filename: self._update_details_log(f"⊘ {n}"))
+                    self.root.after(0, lambda n=filename: self._update_details_log(f"✔ CD: {n}"))
                     failed.append((filename, folder_dest, title, cd_metadata, rel_folder))
 
         # Retry com variações de nome para arquivos que falharam
