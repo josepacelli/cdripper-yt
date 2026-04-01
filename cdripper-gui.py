@@ -915,52 +915,11 @@ class IsaacGUIApp:
             self.cd_details_btn.configure(text="▲ Menos detalhes")
             self.cd_details_expanded = True
 
-    def _create_progress_bar(self, percentage: float, width: int = 40) -> str:
-        """Cria uma barra ASCII de progresso."""
-        filled = int(width * percentage / 100)
-        bar = "█" * filled + "░" * (width - filled)
-        return f"[{bar}] {percentage:5.1f}%"
-
-    def _make_progress_callback(self, filename: str):
-        """Cria um callback thread-safe para atualizar a barra de progresso de um arquivo."""
-        def callback(percentage):
-            self.root.after(0, lambda: self._update_file_progress_bar(filename, percentage))
-        return callback
-
-    def _update_details_log(self, message: str, show_progress_bar: bool = False) -> None:
-        """Adiciona uma mensagem ao log de detalhes com barra de progresso opcional."""
+    def _update_details_log(self, message: str) -> None:
+        """Adiciona uma mensagem ao log de detalhes."""
         self.cd_details_text.configure(state="normal")
         self.cd_details_text.insert(tk.END, message + "\n")
-
-        # Adicionar barra de progresso inicial (0%) se solicitado
-        if show_progress_bar:
-            bar = self._create_progress_bar(0.0)
-            self.cd_details_text.insert(tk.END, f"  {bar}\n")
-
         self.cd_details_text.see(tk.END)
-        self.cd_details_text.configure(state="disabled")
-
-    def _update_file_progress_bar(self, filename: str, percentage: float) -> None:
-        """Atualiza a barra de progresso de um arquivo específico no log de detalhes."""
-        self.cd_details_text.configure(state="normal")
-
-        # Procurar pela linha do arquivo no texto
-        content = self.cd_details_text.get("1.0", tk.END)
-        lines = content.split("\n")
-
-        # Encontrar a linha que contém o arquivo
-        for i, line in enumerate(lines):
-            if filename in line and "[" in line and "%" in line:
-                # Atualizar essa linha com a nova barra
-                line_num = i + 1
-                line_start = f"{line_num}.0"
-                line_end = f"{line_num}.end"
-                new_line = f"✔ {filename}\n  {self._create_progress_bar(percentage)}"
-                self.cd_details_text.delete(line_start, line_end)
-                self.cd_details_text.insert(line_start, new_line)
-                self.cd_details_text.see(tk.END)
-                break
-
         self.cd_details_text.configure(state="disabled")
 
     def _update_cd_artwork(self, artwork_bytes: bytes | None, mime: str = "image/jpeg") -> None:
@@ -1408,10 +1367,7 @@ class IsaacGUIApp:
                                 url = f"https://www.youtube.com/watch?v={top['id']}"
 
                             if url:
-                                # Mostrar barra de progresso no log
-                                self.root.after(0, lambda n=filename: self._update_details_log(f"✔ {n}", show_progress_bar=True))
-                                # Baixar com callback de progresso
-                                mp3_path = download_mp3(url, title, folder_dest, progress_callback=self._make_progress_callback(filename))
+                                mp3_path = download_mp3(url, title, folder_dest)
                                 if os.path.exists(mp3_path):
                                     # Validar duração antes de aceitar
                                     cd_duration = cd_metadata.get("duration_secs")
@@ -1525,10 +1481,7 @@ class IsaacGUIApp:
                             url = f"https://www.youtube.com/watch?v={top['id']}"
 
                         if url:
-                            # Mostrar barra de progresso no log
-                            self.root.after(0, lambda n=filename: self._update_details_log(f"✔ {n}", show_progress_bar=True))
-                            # Baixar com callback de progresso
-                            mp3_path = download_mp3(url, original_title, folder_dest, progress_callback=self._make_progress_callback(filename))
+                            mp3_path = download_mp3(url, original_title, folder_dest)
                             if os.path.exists(mp3_path):
                                 # Validação SEM rigor: aceita qualquer duração > 30s
                                 if cd_duration and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30, strict=False):
