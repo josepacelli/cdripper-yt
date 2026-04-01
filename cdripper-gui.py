@@ -40,6 +40,7 @@ except Exception as exc:
 from cdripper_utils import (
     apply_artwork_to_mp3,
     download_mp3,
+    enrich_mp3_from_internet,
     fetch_playlist_tracks,
     find_cd_drives,
     find_mp3_files,
@@ -1362,6 +1363,8 @@ class IsaacGUIApp:
                                     else:
                                         # Duração OK, aceitar arquivo
                                         apply_artwork_to_mp3(mp3_path, cd_metadata)
+                                        # Enriquecer tags com metadados do YouTube
+                                        enrich_mp3_from_internet(mp3_path, url=url)
                                         success += 1
                                         self.root.after(
                                             0,
@@ -1424,6 +1427,8 @@ class IsaacGUIApp:
                                     else:
                                         # Duração OK, aceitar arquivo
                                         apply_artwork_to_mp3(mp3_path, cd_metadata)
+                                        # Enriquecer tags com metadados do YouTube
+                                        enrich_mp3_from_internet(mp3_path, url=url)
                                         success += 1
                                         self.root.after(
                                             0,
@@ -1472,6 +1477,8 @@ class IsaacGUIApp:
                                 else:
                                     # Fallback mode: aceita mesmo que seja versão diferente
                                     apply_artwork_to_mp3(mp3_path, cd_metadata)
+                                    # Enriquecer tags com metadados do YouTube
+                                    enrich_mp3_from_internet(mp3_path, url=url)
                                     success += 1
                                     self.root.after(
                                         0,

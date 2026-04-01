@@ -351,3 +351,149 @@ def fetch_playlist_tracks(url_or_query: str) -> list[dict]:
         return tracks
     except Exception:
         return []
+
+
+# ── enriquecimento de tags ───────────────────────────────────────────────────
+
+def get_youtube_metadata(url: str) -> dict:
+    """Extrai título, artista, álbum e thumbnail de um vídeo do YouTube."""
+    try:
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+
+        return {
+            "title": info.get("title", ""),
+            "artist": info.get("uploader") or info.get("artist", ""),
+            "album": info.get("album", ""),
+            "track": info.get("track_number"),
+            "thumbnail_url": info.get("thumbnail", ""),
+        }
+    except Exception:
+        return {}
+
+
+def enrich_tags(mp3_path: str, metadata: dict) -> None:
+    """Aplica título, artista, álbum, track e capa ao arquivo MP3."""
+    try:
+        from mutagen.id3 import ID3, TIT2, TPE1, TALB, TRCK, APIC
+
+        try:
+            tags = ID3(mp3_path)
+        except Exception:
+            tags = ID3()
+
+        # Aplicar tags de texto
+        if metadata.get("title"):
+            tags["TIT2"] = TIT2(encoding=3, text=metadata["title"])
+        if metadata.get("artist"):
+            tags["TPE1"] = TPE1(encoding=3, text=metadata["artist"])
+        if metadata.get("album"):
+            tags["TALB"] = TALB(encoding=3, text=metadata["album"])
+        if metadata.get("track"):
+            tags["TRCK"] = TRCK(encoding=3, text=str(metadata["track"]))
+
+        # Aplicar artwork
+        if metadata.get("artwork_bytes"):
+            tags.delall("APIC")
+            tags.add(
+                APIC(
+                    encoding=3,
+                    mime=metadata.get("artwork_mime", "image/jpeg"),
+                    type=3,
+                    desc="Cover",
+                    data=metadata["artwork_bytes"],
+                )
+            )
+
+        tags.save(mp3_path, v2_version=3)
+    except Exception:
+        pass
+
+
+def identify_with_acoustid(mp3_path: str) -> dict:
+    """
+    Usa AcoustID + MusicBrainz para identificar a música pelo fingerprint de áudio.
+    Requer: pip install pyacoustid musicbrainzngs
+             sudo apt install libchromaprint-tools
+    """
+    try:
+        import acoustid
+        import musicbrainzngs
+    except ImportError:
+        return {}
+
+    try:
+        # Fazer fingerprint do áudio
+        results = acoustid.match(
+            "cdripper-yt",
+            mp3_path,
+            parse=False,
+            meta="recordings releases",
+        )
+
+        # Processar resultados
+        for score, recording_id, title, artist in acoustid.parse_lookup_result(
+            results
+        ):
+            if score > 0.7:  # Confiança > 70%
+                # Buscar detalhes no MusicBrainz
+                musicbrainzngs.set_useragent("cdripper-yt", "1.0")
+                rec = musicbrainzngs.get_recording_by_id(
+                    recording_id, includes=["artists", "releases"]
+                )["recording"]
+
+                artist_name = rec.get("artist-credit-phrase", artist)
+                album = ""
+                if rec.get("release-list"):
+                    album = rec["release-list"][0].get("title", "")
+
+                return {
+                    "title": title,
+                    "artist": artist_name,
+                    "album": album,
+                }
+    except Exception:
+        pass
+
+    return {}
+
+
+def enrich_mp3_from_internet(mp3_path: str, url: str = None) -> bool:
+    """
+    Tenta enriquecer as tags de um MP3 a partir da internet.
+    1. Se url fornecida: extrai metadados do YouTube
+    2. Se não tiver dados completos: usa AcoustID + MusicBrainz
+    Retorna True se conseguiu enriquecer com algum dado.
+    """
+    metadata = {}
+
+    # Etapa 1: YouTube
+    if url:
+        metadata = get_youtube_metadata(url)
+
+    # Etapa 2: AcoustID se não tiver artista
+    if not metadata.get("artist"):
+        acoustid_data = identify_with_acoustid(mp3_path)
+        metadata.update({k: v for k, v in acoustid_data.items() if v})
+
+    if not metadata:
+        return False
+
+    # Baixar thumbnail se tiver URL
+    if metadata.get("thumbnail_url"):
+        try:
+            import urllib.request
+
+            with urllib.request.urlopen(metadata["thumbnail_url"]) as resp:
+                metadata["artwork_bytes"] = resp.read()
+                metadata["artwork_mime"] = "image/jpeg"
+        except Exception:
+            pass
+
+    enrich_tags(mp3_path, metadata)
+    return True
