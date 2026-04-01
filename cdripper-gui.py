@@ -49,6 +49,8 @@ from cdripper_utils import (
     search_youtube,
     get_name_variations,
     validate_mp3_duration,
+    setup_logging,
+    get_logger,
 )
 
 
@@ -169,6 +171,13 @@ class Win7ProgressBar(tk.Canvas):
 
 class IsaacGUIApp:
     def __init__(self, root: tk.Tk) -> None:
+        # Configurar logging para arquivo
+        setup_logging("cdripper.log")
+        self.logger = get_logger()
+        self.logger.info("="*70)
+        self.logger.info("Iniciando Isaac Music GUI")
+        self.logger.info("="*70)
+
         self.root = root
         self.root.title("Isaac Music - Modo Infantil")
         self.root.geometry("1280x770")
@@ -183,6 +192,11 @@ class IsaacGUIApp:
         self.spinner = AnimatedSpinner()  # Spinner animado
         self.copying_in_progress: bool = False  # Flag para indicar cópia em andamento
         self.spinner_animation_id: str | None = None  # ID do agendamento de animação
+
+    def _log(self, message: str) -> None:
+        """Log para arquivo e console."""
+        print(message)
+        self.logger.info(message)
 
         # Navegação hierárquica de pastas (Treeview)
         self.nav_root_items: list[str] = []  # Drives + pastas locais adicionadas
@@ -1124,13 +1138,13 @@ class IsaacGUIApp:
             mp3_map = find_mp3_files(self.nav_selected_source)
 
             # Debug: imprimir no console todos os arquivos encontrados
-            print("\n" + "="*70)
-            print(f"DEBUG: Arquivos encontrados em {self.nav_selected_source}")
-            print("="*70)
+            self._log("\n" + "="*70)
+            self._log(f"DEBUG: Arquivos encontrados em {self.nav_selected_source}")
+            self._log("="*70)
             for folder, files in sorted(mp3_map.items()):
                 for i, f in enumerate(sorted(files), 1):
-                    print(f"  {i:02d}. {f}")
-            print("="*70 + "\n")
+                    self._log(f"  {i:02d}. {f}")
+            self._log("="*70 + "\n")
             if not mp3_map:
                 self._set_cd_preview_text("Nenhum arquivo MP3 encontrado nesta pasta.")
                 return
@@ -1284,16 +1298,16 @@ class IsaacGUIApp:
         total = sum(len(files) for files in mp3_map.values())
 
         # Debug: log all files to be processed
-        print("\n" + "="*70)
-        print(f"DEBUG COPY: Total de {total} arquivo(s) para processar")
-        print("="*70)
+        self._log("\n" + "="*70)
+        self._log(f"DEBUG COPY: Total de {total} arquivo(s) para processar")
+        self._log("="*70)
         for rel_folder in sorted(mp3_map.keys()):
             files = mp3_map[rel_folder]
             folder_label = "[Raiz]" if rel_folder == "." else rel_folder
-            print(f"\nPasta: {folder_label}")
+            self._log(f"\nPasta: {folder_label}")
             for i, fname in enumerate(sorted(files), 1):
-                print(f"  {i:02d}. {fname}")
-        print("="*70 + "\n")
+                self._log(f"  {i:02d}. {fname}")
+        self._log("="*70 + "\n")
 
         # Mostrar progress frame e ocultar preview text
         self.cancel_copy = False  # Resetar flag de cancelamento
@@ -1335,11 +1349,11 @@ class IsaacGUIApp:
                 copied = False
 
                 # Debug: log cada arquivo sendo processado
-                print(f"[{done:02d}/{total}] Processando: {filename}")
+                self._log(f"[{done:02d}/{total}] Processando: {filename}")
 
                 # Tentar copiar do CD (com teste de leitura + timeout dinâmico)
                 if self._copy_file_with_timeout(src_file, dst_file):
-                    print(f"  → CD: SUCESSO")
+                    self._log(f"  → CD: SUCESSO")
                     try:
                         # Remover espaços antes da extensão .mp3
                         base, ext = os.path.splitext(dst_file)
@@ -1366,7 +1380,7 @@ class IsaacGUIApp:
                     except Exception:
                         pass
                 else:
-                    print(f"  → CD: FALHOU - tentando YouTube...")
+                    self._log(f"  → CD: FALHOU - tentando YouTube...")
 
                 if not copied:
                     # Deletar arquivo corrompido/incompleto da tentativa de cópia
@@ -1380,40 +1394,40 @@ class IsaacGUIApp:
                     cd_metadata = get_mp3_metadata(src_file)
                     try:
                         cd_duration = cd_metadata.get("duration_secs")
-                        print(f"  → YouTube: buscando '{title}' (duração: {cd_duration:.1f}s)")
+                        self._log(f"  → YouTube: buscando '{title}' (duração: {cd_duration:.1f}s)")
                         results = search_youtube(title, max_results=5, expected_duration_secs=cd_duration)
 
                         # Se não encontrar pela faixa, tenta pelo artista/pasta pai
                         if not results and rel_folder and rel_folder != ".":
                             parent_name = os.path.basename(rel_folder)
-                            print(f"  → YouTube: faixa não encontrada, tentando pasta pai '{parent_name}'")
+                            self._log(f"  → YouTube: faixa não encontrada, tentando pasta pai '{parent_name}'")
                             results = search_youtube(parent_name, max_results=5, expected_duration_secs=cd_duration)
 
                         if results:
-                            print(f"  → YouTube: {len(results)} resultado(s) encontrado(s)")
+                            self._log(f"  → YouTube: {len(results)} resultado(s) encontrado(s)")
                             top = results[0]
                             url = top.get("url") or top.get("webpage_url")
                             if not url and top.get("id"):
                                 url = f"https://www.youtube.com/watch?v={top['id']}"
 
                             if url:
-                                print(f"  → YouTube: baixando {url}")
+                                self._log(f"  → YouTube: baixando {url}")
                         else:
-                            print(f"  → YouTube: NENHUM RESULTADO ENCONTRADO")
+                            self._log(f"  → YouTube: NENHUM RESULTADO ENCONTRADO")
                                 mp3_path = download_mp3(url, title, folder_dest)
                                 if os.path.exists(mp3_path):
                                     # Validar duração antes de aceitar
                                     cd_duration = cd_metadata.get("duration_secs")
                                     if cd_duration and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
                                         # Duração muito errada, deletar e rejeitar
-                                        print(f"  → YouTube: REJEITADO - duração não corresponde")
+                                        self._log(f"  → YouTube: REJEITADO - duração não corresponde")
                                         try:
                                             os.remove(mp3_path)
                                         except Exception:
                                             pass
                                     else:
                                         # Duração OK, aceitar arquivo
-                                        print(f"  → YouTube: SUCESSO")
+                                        self._log(f"  → YouTube: SUCESSO")
                                         apply_artwork_to_mp3(mp3_path, cd_metadata)
                                         # Enriquecer tags com metadados do YouTube
                                         enrich_mp3_from_internet(mp3_path, url=url)
@@ -1433,7 +1447,7 @@ class IsaacGUIApp:
                         pass
 
                 if not copied:
-                    print(f"  → FALHOU: adicionado à fila de retry")
+                    self._log(f"  → FALHOU: adicionado à fila de retry")
                     self.root.after(
                         0,
                         lambda d=done, t=total, n=filename, s=folder_src: self._update_progress(d, t, n, s),
@@ -1441,7 +1455,7 @@ class IsaacGUIApp:
                     self.root.after(0, lambda n=filename: self._update_details_log(f"✔ CD: {n}"))
                     failed.append((filename, folder_dest, title, cd_metadata, rel_folder))
                 else:
-                    print(f"  ✔ SUCESSO")
+                    self._log(f"  ✔ SUCESSO")
 
         # Retry com variações de nome para arquivos que falharam
         if failed:
@@ -1576,13 +1590,13 @@ class IsaacGUIApp:
                 self.root.after(0, lambda n=filename: self._update_details_log(f"✔ CD: {n}"))
 
         # Debug: resumo final
-        print("\n" + "="*70)
-        print(f"DEBUG SUMMARY: {success} de {total} arquivo(s) processado(s)")
+        self._log("\n" + "="*70)
+        self._log(f"DEBUG SUMMARY: {success} de {total} arquivo(s) processado(s)")
         if failed:
-            print(f"Faixas que ficaram incompletas ({len(failed)}):")
+            self._log(f"Faixas que ficaram incompletas ({len(failed)}):")
             for item in failed:
-                print(f"  - {item[0]}")
-        print("="*70 + "\n")
+                self._log(f"  - {item[0]}")
+        self._log("="*70 + "\n")
 
         self.root.after(0, lambda: self._set_cd_preview_text(summary_text))
         self.root.after(0, lambda: self.cd_cancel_btn.configure(state="normal", text="⛔ Cancelar"))

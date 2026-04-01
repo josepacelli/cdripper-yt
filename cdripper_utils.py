@@ -9,6 +9,7 @@ import re
 import sys
 import shutil
 import platform
+import logging
 from pathlib import Path
 
 try:
@@ -17,6 +18,40 @@ except ImportError:
     print("Instalando yt-dlp...")
     os.system(f"{sys.executable} -m pip install yt-dlp -q")
     import yt_dlp
+
+
+# ── logging ──────────────────────────────────────────────────────────────────
+
+def setup_logging(log_file: str = "cdripper.log") -> logging.Logger:
+    """Configura logging para arquivo e console."""
+    logger = logging.getLogger("cdripper")
+
+    # Limpar handlers anteriores se houver
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+
+    logger.setLevel(logging.DEBUG)
+
+    # Handler para arquivo
+    try:
+        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        file_handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s',
+                                      datefmt='%Y-%m-%d %H:%M:%S')
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    except Exception:
+        pass  # Se não conseguir criar arquivo, continua
+
+    return logger
+
+
+def get_logger() -> logging.Logger:
+    """Retorna o logger configurado ou um novo."""
+    logger = logging.getLogger("cdripper")
+    if not logger.handlers:
+        setup_logging()
+    return logger
 
 
 # ── busca ────────────────────────────────────────────────────────────────────
