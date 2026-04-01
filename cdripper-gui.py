@@ -172,11 +172,13 @@ class Win7ProgressBar(tk.Canvas):
 class IsaacGUIApp:
     def __init__(self, root: tk.Tk) -> None:
         # Configurar logging para arquivo
-        setup_logging("cdripper.log")
-        self.logger = get_logger()
-        self.logger.info("="*70)
-        self.logger.info("Iniciando Isaac Music GUI")
-        self.logger.info("="*70)
+        try:
+            setup_logging("cdripper.log")
+            self.logger = get_logger()
+        except Exception:
+            # Se logging falhar, criar dummy logger
+            import logging
+            self.logger = logging.getLogger("cdripper_dummy")
 
         self.root = root
         self.root.title("Isaac Music - Modo Infantil")
@@ -196,7 +198,11 @@ class IsaacGUIApp:
     def _log(self, message: str) -> None:
         """Log para arquivo e console."""
         print(message)
-        self.logger.info(message)
+        try:
+            if hasattr(self, 'logger'):
+                self.logger.info(message)
+        except Exception:
+            pass  # Se logger falhar, continua só com print
 
         # Navegação hierárquica de pastas (Treeview)
         self.nav_root_items: list[str] = []  # Drives + pastas locais adicionadas
