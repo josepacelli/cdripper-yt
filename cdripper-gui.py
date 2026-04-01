@@ -1122,6 +1122,15 @@ class IsaacGUIApp:
 
         try:
             mp3_map = find_mp3_files(self.nav_selected_source)
+
+            # Debug: imprimir no console todos os arquivos encontrados
+            print("\n" + "="*70)
+            print(f"DEBUG: Arquivos encontrados em {self.nav_selected_source}")
+            print("="*70)
+            for folder, files in sorted(mp3_map.items()):
+                for i, f in enumerate(sorted(files), 1):
+                    print(f"  {i:02d}. {f}")
+            print("="*70 + "\n")
             if not mp3_map:
                 self._set_cd_preview_text("Nenhum arquivo MP3 encontrado nesta pasta.")
                 return
