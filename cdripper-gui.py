@@ -1412,8 +1412,6 @@ class IsaacGUIApp:
 
                             if url:
                                 self._log(f"  → YouTube: baixando {url}")
-                        else:
-                            self._log(f"  → YouTube: NENHUM RESULTADO ENCONTRADO")
                                 mp3_path = download_mp3(url, title, folder_dest)
                                 if os.path.exists(mp3_path):
                                     # Validar duração antes de aceitar
@@ -1443,6 +1441,8 @@ class IsaacGUIApp:
                                             ),
                                         )
                                         copied = True
+                        else:
+                            self._log(f"  → YouTube: NENHUM RESULTADO ENCONTRADO")
                     except Exception:
                         pass
 
