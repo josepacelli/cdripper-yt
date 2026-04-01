@@ -237,6 +237,17 @@ def download_mp3(video_url: str, title: str, output_dir: str = "downloads", prog
         ydl.download([video_url])
 
     mp3_file = os.path.join(output_dir, f"{safe_title}.mp3")
+
+    # Limpar arquivos de vídeo/áudio temporários deixados pelo yt-dlp
+    # (webm, m4a, opus, etc - qualquer coisa que não seja .mp3)
+    try:
+        for ext in ["webm", "m4a", "opus", "wav", "aac", "mkv", "flv", "avi"]:
+            temp_file = os.path.join(output_dir, f"{safe_title}.{ext}")
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+    except Exception:
+        pass
+
     return mp3_file
 
 
