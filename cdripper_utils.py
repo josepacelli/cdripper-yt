@@ -202,12 +202,18 @@ def download_mp3(video_url: str, title: str, output_dir: str = "downloads", prog
         class CallbackProgressHook:
             def __init__(self, cb):
                 self.callback = cb
+                self.total_bytes = 0
             def __call__(self, d):
                 if d.get("status") == "downloading":
-                    total = d.get("total_bytes") or d.get("total_bytes_estimate") or 1
-                    downloaded = d.get("downloaded_bytes", 0)
-                    pct = (downloaded / total * 100) if total > 0 else 0
-                    self.callback(pct)
+                    # Descobrir o tamanho total (só uma vez)
+                    if self.total_bytes == 0:
+                        self.total_bytes = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+
+                    # Só atualizar se temos tamanho total válido
+                    if self.total_bytes > 0:
+                        downloaded = d.get("downloaded_bytes", 0)
+                        pct = (downloaded / self.total_bytes * 100)
+                        self.callback(pct)
         progress_hooks = [CallbackProgressHook(progress_callback)]
     else:
         progress_hooks = [ProgressHook()]
