@@ -40,6 +40,7 @@ except Exception as exc:
 from cdripper_utils import (
     apply_artwork_to_mp3,
     download_mp3,
+    download_mp4,
     enrich_mp3_from_internet,
     fetch_playlist_tracks,
     find_cd_drives,
@@ -195,6 +196,12 @@ class IsaacGUIApp:
         self.copying_in_progress: bool = False  # Flag para indicar cópia em andamento
         self.spinner_animation_id: str | None = None  # ID do agendamento de animação
 
+        # Vídeo YouTube (MP4)
+        self.video_results: list[dict] = []  # Resultados da busca de vídeos
+        self.video_cancel: bool = False  # Flag para cancelar download de vídeo
+        self.video_in_progress: bool = False  # Flag para indicar download em andamento
+        self.video_start_time: float = 0.0  # Tempo de início do download
+
         # Navegação hierárquica de pastas (Treeview)
         self.nav_root_items: list[str] = []  # Drives + pastas locais adicionadas
         self.nav_selected_source: str | None = None  # Caminho selecionado no treeview
@@ -270,14 +277,17 @@ class IsaacGUIApp:
         self.youtube_tab = tk.Frame(notebook, bg="#F6FBFF")
         self.cd_tab = tk.Frame(notebook, bg="#F6FBFF")
         self.playlist_tab = tk.Frame(notebook, bg="#F6FBFF")
+        self.video_tab = tk.Frame(notebook, bg="#F6FBFF")
 
         notebook.add(self.youtube_tab, text="📺 YouTube")
         notebook.add(self.cd_tab, text="💿 Copiar CD")
         notebook.add(self.playlist_tab, text="💿 Playlist")
+        notebook.add(self.video_tab, text="🎬 Baixar Vídeo")
 
         self._build_youtube_tab()
         self._build_cd_tab()
         self._build_playlist_tab()
+        self._build_video_tab()
 
     def _build_youtube_tab(self) -> None:
         container = tk.Frame(self.youtube_tab, bg="#F6FBFF")
@@ -830,6 +840,351 @@ class IsaacGUIApp:
             command=self._cancel_playlist,
         )
         cancel_button.pack(anchor="w", pady=(8, 0))
+
+    def _build_video_tab(self) -> None:
+        """Constrói a aba de download de vídeo em MP4."""
+        container = tk.Frame(self.video_tab, bg="#F6FBFF")
+        container.pack(fill="both", expand=True, padx=16, pady=14)
+
+        # Seção 1: Busca por nome ou URL
+        search_label = tk.Label(
+            container,
+            text="1) Nome ou URL do vídeo:",
+            font=self.section_font,
+            bg="#F6FBFF",
+            fg="#114B5F",
+        )
+        search_label.pack(anchor="w", pady=(0, 8))
+
+        search_frame = tk.Frame(container, bg="#F6FBFF")
+        search_frame.pack(fill="x", pady=(0, 16))
+
+        self.video_query = tk.Entry(search_frame, font=self.text_font, width=40)
+        self.video_query.pack(side="left", fill="x", expand=True, padx=(0, 8))
+
+        search_btn = tk.Button(
+            search_frame,
+            text="🔍 Procurar",
+            font=self.big_btn_font,
+            bg="#00B4D8",
+            fg="white",
+            padx=16,
+            pady=8,
+            command=self._search_video,
+        )
+        search_btn.pack(side="left")
+
+        # Seção 2: Lista de resultados
+        results_label = tk.Label(
+            container,
+            text="2) Escolha o vídeo:",
+            font=self.section_font,
+            bg="#F6FBFF",
+            fg="#114B5F",
+        )
+        results_label.pack(anchor="w", pady=(0, 8))
+
+        results_frame = tk.Frame(container, bg="white", relief="solid", borderwidth=1)
+        results_frame.pack(fill="both", expand=True, pady=(0, 16))
+
+        self.video_results_list = tk.Listbox(
+            results_frame,
+            font=self.text_font,
+            height=6,
+            selectmode="single",
+            bg="white",
+            fg="#114B5F",
+            selectbackground="#90E0EF",
+            selectforeground="#023E8A",
+        )
+        self.video_results_list.pack(side="left", fill="both", expand=True)
+
+        scrollbar = tk.Scrollbar(results_frame, command=self.video_results_list.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.video_results_list.config(yscrollcommand=scrollbar.set)
+
+        # Seção 3: Pasta de destino
+        dest_label = tk.Label(
+            container,
+            text="Pasta de destino:",
+            font=self.section_font,
+            bg="#F6FBFF",
+            fg="#114B5F",
+        )
+        dest_label.pack(anchor="w", pady=(0, 8))
+
+        self.video_output_entry = tk.Entry(container, font=self.text_font)
+        self.video_output_entry.insert(0, "downloads")
+        self.video_output_entry.pack(fill="x", pady=(0, 16))
+
+        # Status
+        self.video_status = tk.Label(
+            container,
+            text="Pronto para baixar",
+            font=("Arial", 12),
+            bg="#F6FBFF",
+            fg="#114B5F",
+        )
+        self.video_status.pack(anchor="w", pady=(0, 8))
+
+        # Botão de download
+        download_btn = tk.Button(
+            container,
+            text="🎬 Baixar em MP4",
+            font=self.big_btn_font,
+            bg="#7B2FBE",
+            fg="white",
+            padx=20,
+            pady=10,
+            command=self._download_video,
+        )
+        download_btn.pack(fill="x", pady=(0, 16))
+
+        # Frame de progresso (oculto por padrão)
+        self.video_progress_frame = tk.Frame(container, bg="#F6FBFF")
+
+        progress_bar_frame = tk.Frame(self.video_progress_frame, bg="#F6FBFF")
+        progress_bar_frame.pack(fill="x", pady=(0, 8))
+
+        self.video_progress_bar = Win7ProgressBar(progress_bar_frame, height=30)
+        self.video_progress_bar.pack(fill="x", expand=True)
+
+        progress_info = tk.Frame(self.video_progress_frame, bg="#F6FBFF")
+        progress_info.pack(fill="x", pady=(0, 8))
+
+        self.video_progress_percent = tk.Label(
+            progress_info,
+            text="0%",
+            font=("Arial", 11, "bold"),
+            bg="#F6FBFF",
+            fg="#175A8A",
+        )
+        self.video_progress_percent.pack(side="left", padx=(0, 16))
+
+        self.video_progress_size = tk.Label(
+            progress_info,
+            text="0.0 MB / 0.0 MB",
+            font=("Arial", 11),
+            bg="#F6FBFF",
+            fg="#175A8A",
+        )
+        self.video_progress_size.pack(side="left", padx=(0, 16))
+
+        self.video_progress_speed = tk.Label(
+            progress_info,
+            text="0.0 MB/s",
+            font=("Arial", 11),
+            bg="#F6FBFF",
+            fg="#175A8A",
+        )
+        self.video_progress_speed.pack(side="left", padx=(0, 16))
+
+        self.video_progress_eta = tk.Label(
+            progress_info,
+            text="ETA: --",
+            font=("Arial", 11),
+            bg="#F6FBFF",
+            fg="#175A8A",
+        )
+        self.video_progress_eta.pack(side="left", expand=True)
+
+        # Nome do arquivo e botão cancelar
+        file_info = tk.Frame(self.video_progress_frame, bg="#F6FBFF")
+        file_info.pack(fill="x", pady=(8, 0))
+
+        self.video_current_file = tk.Label(
+            file_info,
+            text="⠋ Baixando...",
+            font=("Arial", 11),
+            bg="#F6FBFF",
+            fg="#175A8A",
+        )
+        self.video_current_file.pack(side="left", expand=True)
+
+        self.video_cancel_btn = tk.Button(
+            file_info,
+            text="⏹ Parar",
+            font=("Arial", 11, "bold"),
+            bg="#B00020",
+            fg="white",
+            padx=12,
+            pady=4,
+            command=self._cancel_video,
+        )
+        self.video_cancel_btn.pack(side="right")
+
+    def _search_video(self) -> None:
+        """Busca vídeos no YouTube por nome ou URL."""
+        query = self.video_query.get().strip()
+        if not query:
+            return
+
+        # Se for URL, não precisa buscar
+        if query.startswith("http://") or query.startswith("https://"):
+            self.video_results = [{"title": query, "url": query, "duration": None, "id": ""}]
+            self.video_results_list.delete(0, tk.END)
+            self.video_results_list.insert(tk.END, f"01. {query}")
+            self.video_status.configure(text="✔ URL válida, pronto para baixar", fg="#2B9348")
+            return
+
+        # Busca por nome
+        self.video_status.configure(text="🔍 Buscando...", fg="#005F73")
+        self.video_results_list.delete(0, tk.END)
+
+        def worker():
+            try:
+                results = search_youtube(query, max_results=8)
+                self.root.after(0, lambda: self._on_video_search_done(results))
+            except Exception as e:
+                self.root.after(0, lambda: self._on_video_search_error(e))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_video_search_done(self, results: list[dict]) -> None:
+        """Callback quando busca no YouTube termina."""
+        if not results:
+            self.video_status.configure(text="⊘ Nenhum vídeo encontrado", fg="#B00020")
+            return
+
+        self.video_results = results
+        self.video_results_list.delete(0, tk.END)
+
+        for idx, video in enumerate(results, 1):
+            title = video.get("title", "Sem título")
+            duration = video.get("duration", 0) or 0
+            minutes = int(duration) // 60
+            seconds = int(duration) % 60
+            display_text = f"{idx:02d}. {title}   ({minutes}:{seconds:02d})"
+            self.video_results_list.insert(tk.END, display_text)
+
+        self.video_status.configure(
+            text=f"✔ {len(results)} vídeo(s) encontrado(s)",
+            fg="#2B9348"
+        )
+
+    def _on_video_search_error(self, exc: Exception) -> None:
+        """Callback para erro na busca de vídeo."""
+        self.video_status.configure(
+            text="⊘ Erro na busca",
+            fg="#B00020"
+        )
+        self._log(f"Erro ao buscar vídeo: {exc}")
+
+    def _download_video(self) -> None:
+        """Inicia download do vídeo selecionado em MP4."""
+        sel = self.video_results_list.curselection()
+        if not sel:
+            messagebox.showwarning("Seleção necessária", "Escolha um vídeo para baixar.")
+            return
+
+        idx = sel[0]
+        if idx >= len(self.video_results):
+            return
+
+        result = self.video_results[idx]
+        url = result.get("url") or result.get("webpage_url")
+        if not url and result.get("id"):
+            url = f"https://www.youtube.com/watch?v={result['id']}"
+
+        if not url:
+            messagebox.showerror("Erro", "Não foi possível extrair a URL do vídeo.")
+            return
+
+        title = result.get("title", "vídeo")
+        output_dir = self.video_output_entry.get().strip() or "downloads"
+
+        # Mostrar barra de progresso
+        self.video_progress_frame.pack(fill="x", pady=(16, 0))
+        self.video_progress_bar["maximum"] = 100
+        self.video_progress_bar["value"] = 0
+        self.video_progress_bar.start_animation()
+        self.video_progress_percent.configure(text="0%")
+        self.video_progress_size.configure(text="0.0 MB / 0.0 MB")
+        self.video_progress_speed.configure(text="0.0 MB/s")
+        self.video_progress_eta.configure(text="ETA: --")
+        self.video_current_file.configure(text=f"⠋ Baixando: {title}")
+        self.video_cancel_btn.configure(state="normal", text="⏹ Parar")
+
+        self.video_cancel = False
+        self.video_in_progress = True
+        self.video_start_time = time.time()
+
+        # Criar hook de progresso
+        class VideoProgressHook:
+            def __init__(hook_self, parent_self):
+                hook_self.parent = parent_self
+                hook_self.spinner = AnimatedSpinner()
+
+            def __call__(hook_self, d):
+                if d.get("status") != "downloading":
+                    return
+
+                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                downloaded = d.get("downloaded_bytes", 0)
+                speed = d.get("speed") or 0
+
+                if total:
+                    pct = int(downloaded / total * 100)
+                    hook_self.parent.root.after(
+                        0,
+                        lambda pct=pct, down=downloaded, tot=total, spd=speed:
+                        hook_self.parent._update_video_progress(pct, down, tot, spd)
+                    )
+
+        progress_hook = VideoProgressHook(self)
+
+        def worker():
+            try:
+                download_mp4(url, title, output_dir, progress_hook)
+                self.root.after(0, lambda: self._on_video_download_done(title, output_dir))
+            except Exception as e:
+                self.root.after(0, lambda: self._on_video_download_error(e))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _update_video_progress(self, pct: int, downloaded: int, total: int, speed: float) -> None:
+        """Atualiza barra de progresso do download de vídeo."""
+        if self.video_cancel:
+            return
+
+        self.video_progress_bar["value"] = pct
+        self.video_progress_percent.configure(text=f"{pct}%")
+
+        downloaded_mb = downloaded / (1024 * 1024)
+        total_mb = total / (1024 * 1024)
+        self.video_progress_size.configure(text=f"{downloaded_mb:.1f} MB / {total_mb:.1f} MB")
+
+        speed_mb = speed / (1024 * 1024)
+        self.video_progress_speed.configure(text=f"{speed_mb:.1f} MB/s")
+
+        if speed > 0 and downloaded < total:
+            eta_secs = int((total - downloaded) / speed)
+            self.video_progress_eta.configure(text=f"ETA: {eta_secs}s")
+
+    def _cancel_video(self) -> None:
+        """Cancela o download de vídeo."""
+        self.video_cancel = True
+        self.video_cancel_btn.configure(state="disabled", text="⏹ Cancelando...")
+
+    def _on_video_download_done(self, title: str, output_dir: str) -> None:
+        """Callback quando download de vídeo termina."""
+        self.video_in_progress = False
+        self.video_progress_bar.stop_animation()
+        self.video_cancel_btn.configure(state="normal", text="⏹ Parar")
+        self.video_status.configure(text="✔ Download concluído!", fg="#2B9348")
+        self._log(f"Vídeo '{title}' baixado em {output_dir}")
+        messagebox.showinfo(
+            "Tudo pronto",
+            f"Vídeo salvo em:\n{output_dir}/{title}.mp4"
+        )
+
+    def _on_video_download_error(self, exc: Exception) -> None:
+        """Callback para erro no download de vídeo."""
+        self.video_in_progress = False
+        self.video_progress_bar.stop_animation()
+        self.video_cancel_btn.configure(state="normal", text="⏹ Parar")
+        self.video_status.configure(text="⊘ Erro no download", fg="#B00020")
+        self._log(f"Erro ao baixar vídeo: {exc}")
 
     def _update_cd_target_label(self) -> None:
         """Atualiza o label de destino quando a pasta é alterada."""

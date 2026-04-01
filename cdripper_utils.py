@@ -264,6 +264,30 @@ def download_mp3(video_url: str, title: str, output_dir: str = "downloads") -> s
     return mp3_file
 
 
+def download_mp4(video_url: str, title: str, output_dir: str = "downloads",
+                 progress_hook=None) -> str:
+    """Baixa vídeo do YouTube em formato MP4. Retorna caminho do arquivo."""
+    os.makedirs(output_dir, exist_ok=True)
+    safe_title = sanitize_filename(title)
+    output_path = os.path.join(output_dir, f"{safe_title}.%(ext)s")
+
+    hooks = [progress_hook] if progress_hook else []
+
+    ydl_opts = {
+        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "merge_output_format": "mp4",
+        "outtmpl": output_path,
+        "quiet": True,
+        "no_warnings": True,
+        "progress_hooks": hooks,
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([video_url])
+
+    return os.path.join(output_dir, f"{safe_title}.mp4")
+
+
 # ── cópia de CDs ─────────────────────────────────────────────────────────────
 
 def find_cd_drives() -> list[str]:
