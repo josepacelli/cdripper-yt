@@ -1797,7 +1797,7 @@ class IsaacGUIApp:
                                         )
                                         self.root.after(
                                             0,
-                                            lambda n=filename: self._update_details_log(f"🎵 YouTube: {n}"),
+                                            lambda n=filename: self._update_details_log(f"✔ CD: {n}"),
                                         )
                                         self.root.after(
                                             0,
