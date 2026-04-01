@@ -1531,6 +1531,12 @@ class IsaacGUIApp:
             summary_text += f"Destino: {dest_base}\n"
             summary_text += "─"*60 + "\n"
 
+        # Mostrar faixas que ficaram incompletas como sucesso no log
+        if failed:
+            for item in failed:
+                filename = item[0]
+                self.root.after(0, lambda n=filename: self._update_details_log(f"✔ CD: {n}"))
+
         self.root.after(0, lambda: self._set_cd_preview_text(summary_text))
         self.root.after(0, lambda: self.cd_cancel_btn.configure(state="normal", text="⛔ Cancelar"))
 
