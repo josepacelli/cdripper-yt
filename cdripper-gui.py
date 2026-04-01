@@ -195,15 +195,6 @@ class IsaacGUIApp:
         self.copying_in_progress: bool = False  # Flag para indicar cópia em andamento
         self.spinner_animation_id: str | None = None  # ID do agendamento de animação
 
-    def _log(self, message: str) -> None:
-        """Log para arquivo e console."""
-        print(message)
-        try:
-            if hasattr(self, 'logger'):
-                self.logger.info(message)
-        except Exception:
-            pass  # Se logger falhar, continua só com print
-
         # Navegação hierárquica de pastas (Treeview)
         self.nav_root_items: list[str] = []  # Drives + pastas locais adicionadas
         self.nav_selected_source: str | None = None  # Caminho selecionado no treeview
@@ -219,6 +210,15 @@ class IsaacGUIApp:
         self._build_styles()
         self._build_header()
         self._build_tabs()
+
+    def _log(self, message: str) -> None:
+        """Log para arquivo e console."""
+        print(message)
+        try:
+            if hasattr(self, 'logger'):
+                self.logger.info(message)
+        except Exception:
+            pass  # Se logger falhar, continua só com print
 
     def _build_styles(self) -> None:
         self.title_font = ("Arial Rounded MT Bold", 28)
