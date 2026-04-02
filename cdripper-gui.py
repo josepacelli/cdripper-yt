@@ -182,9 +182,6 @@ class IsaacGUIApp:
             import logging
             self.logger = logging.getLogger("cdripper_dummy")
 
-        # Log da versão
-        self._log(f"🎵 Isaac Music v{self.version} iniciado")
-
         self.root = root
         self.version = get_version()
         self.root.title(f"🎵 Isaac Music v{self.version} - Modo Infantil")
@@ -274,6 +271,9 @@ class IsaacGUIApp:
             fg="#175A8A",
         )
         version_label.pack(pady=(0, 4))
+
+        # Log de inicialização (agora que tudo está pronto)
+        self._log(f"🎵 Isaac Music v{self.version} iniciado")
 
         subtitle = tk.Label(
             header,
