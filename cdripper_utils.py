@@ -12,6 +12,19 @@ import platform
 import logging
 from pathlib import Path
 
+# ── versão ──────────────────────────────────────────────────────────────────
+
+def get_version() -> str:
+    """Retorna a versão do Isaac Music a partir do arquivo VERSION."""
+    try:
+        version_file = os.path.join(os.path.dirname(__file__), "VERSION")
+        if os.path.exists(version_file):
+            with open(version_file, "r") as f:
+                return f.read().strip()
+    except Exception:
+        pass
+    return "1.0.0"  # Fallback se não conseguir ler
+
 try:
     import yt_dlp
 except ImportError:

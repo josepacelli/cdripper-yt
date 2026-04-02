@@ -52,6 +52,7 @@ from cdripper_utils import (
     validate_mp3_duration,
     setup_logging,
     get_logger,
+    get_version,
 )
 
 
@@ -181,8 +182,12 @@ class IsaacGUIApp:
             import logging
             self.logger = logging.getLogger("cdripper_dummy")
 
+        # Log da versão
+        self._log(f"🎵 Isaac Music v{self.version} iniciado")
+
         self.root = root
-        self.root.title("Isaac Music - Modo Infantil")
+        self.version = get_version()
+        self.root.title(f"🎵 Isaac Music v{self.version} - Modo Infantil")
         self.root.geometry("1280x770")
         self.root.minsize(980, 680)
         self.root.configure(bg="#F6FBFF")
@@ -260,6 +265,15 @@ class IsaacGUIApp:
             fg="#083B66",
         )
         title.pack(pady=(12, 0))
+
+        version_label = tk.Label(
+            header,
+            text=f"v{self.version}",
+            font=("Arial", 10),
+            bg="#CDEBFF",
+            fg="#175A8A",
+        )
+        version_label.pack(pady=(0, 4))
 
         subtitle = tk.Label(
             header,
