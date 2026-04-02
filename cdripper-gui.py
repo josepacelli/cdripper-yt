@@ -1753,9 +1753,17 @@ class IsaacGUIApp:
 
                     # Se falhar, tenta YouTube imediatamente
                     cd_metadata = get_mp3_metadata(src_file)
+
+                    # Detectar se é arquivo de vídeo disfarçado de MP3
+                    if cd_metadata.get("is_video"):
+                        self._log(f"  → CD: arquivo é vídeo (não é MP3), tentando YouTube...")
+
                     try:
                         cd_duration = cd_metadata.get("duration_secs")
-                        self._log(f"  → YouTube: buscando '{title}' (duração: {cd_duration:.1f}s)")
+                        if cd_duration:
+                            self._log(f"  → YouTube: buscando '{title}' (duração: {cd_duration:.1f}s)")
+                        else:
+                            self._log(f"  → YouTube: buscando '{title}' (duração desconhecida)")
                         results = search_youtube(title, max_results=5, expected_duration_secs=cd_duration)
 
                         # Se não encontrar pela faixa, tenta pelo artista/pasta pai

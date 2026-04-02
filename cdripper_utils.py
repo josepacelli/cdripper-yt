@@ -117,14 +117,59 @@ class ProgressHook:
             print(f"\n  ✔ Convertendo…")
 
 
+def is_valid_mp3(mp3_path: str) -> bool:
+    """Verifica se o arquivo é um MP3 válido ou se é vídeo disfarçado.
+    Retorna True se é MP3 válido, False se for vídeo ou inválido."""
+    try:
+        from mutagen.mp3 import MP3
+        audio = MP3(mp3_path)
+        # Se conseguiu carregar e tem duração, é MP3 válido
+        return audio.info.length > 0
+    except Exception:
+        pass
+
+    # Se não conseguiu carregar como MP3, verifica header de vídeo
+    try:
+        with open(mp3_path, 'rb') as f:
+            header = f.read(12)
+
+            # Checar assinaturas de vídeos comuns
+            # AVI: RIFF...AVI
+            if header[:4] == b'RIFF' and header[8:12] == b'AVI ':
+                return False
+            # MOV: ftyp no offset 4
+            if header[4:8] == b'ftyp':
+                return False
+            # WMV: starts with 30 26 B2 75...
+            if header[:2] == b'\x30\x26':
+                return False
+            # MP4: ftyp, isom, etc
+            if b'ftyp' in header or b'isom' in header:
+                return False
+            # MKV: 1A 45 DF A3
+            if header[:4] == b'\x1a\x45\xdf\xa3':
+                return False
+    except Exception:
+        pass
+
+    # Se não conseguiu validar como MP3 ou detectar vídeo, é inválido
+    return False
+
+
 def get_mp3_metadata(mp3_path: str) -> dict:
-    """Extrai metadados (imagem, duração) de um MP3. Retorna dict com os dados encontrados."""
+    """Extrai metadados (imagem, duração) de um MP3. Retorna dict com os dados encontrados.
+    Detecta se o arquivo é vídeo disfarçado e marca com flag 'is_video'."""
+    # Primeiro, verificar se é vídeo
+    if not is_valid_mp3(mp3_path):
+        # É vídeo ou arquivo inválido
+        return {"is_video": True, "duration_secs": None}
+
     try:
         from mutagen.mp3 import MP3
         from mutagen.id3 import ID3
 
         audio = MP3(mp3_path)
-        metadata = {"duration_secs": audio.info.length}
+        metadata = {"duration_secs": audio.info.length, "is_video": False}
 
         # Tentar extrair tags ID3
         try:
@@ -143,7 +188,7 @@ def get_mp3_metadata(mp3_path: str) -> dict:
 
         return metadata
     except Exception:
-        return {}
+        return {"is_video": True, "duration_secs": None}
 
 
 def apply_artwork_to_mp3(mp3_path: str, metadata: dict) -> None:
