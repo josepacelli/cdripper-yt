@@ -50,6 +50,7 @@ from cdripper_utils import (
     get_next_cd_number,
     search_youtube,
     get_name_variations,
+    normalize_search_query,
     validate_mp3_duration,
     setup_logging,
     get_logger,
@@ -1960,13 +1961,16 @@ class IsaacGUIApp:
                             self._log(f"  → YouTube: buscando '{title}' (duração: {cd_duration:.1f}s)")
                         else:
                             self._log(f"  → YouTube: buscando '{title}' (duração desconhecida)")
-                        results = search_youtube(title, max_results=5, expected_duration_secs=cd_duration)
+                        # Normalizar nome para melhorar busca (remove underscores, espaços duplicados)
+                        normalized_title = normalize_search_query(title)
+                        results = search_youtube(normalized_title, max_results=5, expected_duration_secs=cd_duration)
 
                         # Se não encontrar pela faixa, tenta pelo artista/pasta pai
                         if not results and rel_folder and rel_folder != ".":
                             parent_name = os.path.basename(rel_folder)
                             self._log(f"  → YouTube: faixa não encontrada, tentando pasta pai '{parent_name}'")
-                            results = search_youtube(parent_name, max_results=5, expected_duration_secs=cd_duration)
+                            normalized_parent = normalize_search_query(parent_name)
+                            results = search_youtube(normalized_parent, max_results=5, expected_duration_secs=cd_duration)
 
                         if results:
                             self._log(f"  → YouTube: {len(results)} resultado(s) encontrado(s)")
@@ -2046,12 +2050,15 @@ class IsaacGUIApp:
 
                 for var_title in variations[1:]:
                     try:
-                        results = search_youtube(var_title, max_results=5, expected_duration_secs=cd_duration)
+                        # Normalizar nome para melhorar busca (remove underscores, espaços duplicados)
+                        normalized_var = normalize_search_query(var_title)
+                        results = search_youtube(normalized_var, max_results=5, expected_duration_secs=cd_duration)
 
                         # Se não encontrar pela variação, tenta pelo artista/pasta pai
                         if not results and rel_folder and rel_folder != ".":
                             parent_name = os.path.basename(rel_folder)
-                            results = search_youtube(parent_name, max_results=5, expected_duration_secs=cd_duration)
+                            normalized_parent = normalize_search_query(parent_name)
+                            results = search_youtube(normalized_parent, max_results=5, expected_duration_secs=cd_duration)
 
                         if results:
                             cd_duration = cd_metadata.get("duration_secs")
@@ -2109,12 +2116,15 @@ class IsaacGUIApp:
 
             for var_title in variations[1:]:
                 try:
-                    results = search_youtube(var_title, max_results=5, expected_duration_secs=cd_duration)
+                    # Normalizar nome para melhorar busca (remove underscores, espaços duplicados)
+                    normalized_var = normalize_search_query(var_title)
+                    results = search_youtube(normalized_var, max_results=5, expected_duration_secs=cd_duration)
 
                     # Se não encontrar pela variação, tenta pelo artista/pasta pai
                     if not results and rel_folder and rel_folder != ".":
                         parent_name = os.path.basename(rel_folder)
-                        results = search_youtube(parent_name, max_results=5, expected_duration_secs=cd_duration)
+                        normalized_parent = normalize_search_query(parent_name)
+                        results = search_youtube(normalized_parent, max_results=5, expected_duration_secs=cd_duration)
 
                     if results:
                         # Tentar cada resultado até encontrar um que passe

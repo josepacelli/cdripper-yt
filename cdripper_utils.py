@@ -427,6 +427,18 @@ def get_next_cd_number(base_dir: str = "downloads") -> int:
     return max_num + 1
 
 
+def normalize_search_query(query: str) -> str:
+    """Normaliza query para melhorar busca no YouTube.
+    Remove underscores, duplicatas, e caracteres desnecessários."""
+    # Substituir underscores por espaços
+    query = query.replace("_", " ")
+
+    # Remover espaços duplicados
+    query = re.sub(r'\s+', ' ', query).strip()
+
+    return query
+
+
 def get_name_variations(title: str) -> list[str]:
     """Gera variações do nome para tentar buscar no YouTube."""
     variations = [title]
