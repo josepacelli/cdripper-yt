@@ -6,6 +6,7 @@ Contém funções para busca/download de YouTube e manipulação de CDs.
 
 import os
 import re
+import subprocess
 import sys
 import shutil
 import platform
@@ -284,42 +285,66 @@ def sanitize_filename(name: str) -> str:
 
 
 def download_mp3(video_url: str, title: str, output_dir: str = "downloads") -> str:
-    """Baixa o vídeo e converte para MP3."""
+    """Baixa em qualquer formato disponível e converte para MP3 com ffmpeg."""
     os.makedirs(output_dir, exist_ok=True)
     safe_title = sanitize_filename(title)
     output_path = os.path.join(output_dir, f"{safe_title}.%(ext)s")
+    mp3_path = os.path.join(output_dir, f"{safe_title}.mp3")
 
+    # Passo 1: Baixar no formato nativo (sem conversão pelo yt-dlp)
     ydl_opts = {
         "format": "bestaudio/best",
         "outtmpl": output_path,
         "quiet": True,
         "no_warnings": True,
         "progress_hooks": [ProgressHook()],
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            }
-        ],
+        # SEM postprocessors — queremos o arquivo original intacto
     }
 
+    downloaded_file = None
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([video_url])
+        info = ydl.extract_info(video_url, download=True)
+        if info:
+            ext = info.get("ext", "")
+            downloaded_file = os.path.join(output_dir, f"{safe_title}.{ext}")
 
-    mp3_file = os.path.join(output_dir, f"{safe_title}.mp3")
+    # Passo 2: Converter para MP3 com ffmpeg explicitamente
+    if downloaded_file and os.path.exists(downloaded_file):
+        try:
+            subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-i", downloaded_file,
+                    "-vn",           # sem vídeo
+                    "-acodec", "libmp3lame",
+                    "-ab", "192k",
+                    "-ar", "44100",
+                    mp3_path,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            # Se ffmpeg falhar, registrar erro
+            pass
 
-    # Limpar arquivos de vídeo/áudio temporários deixados pelo yt-dlp
-    # (webm, m4a, opus, etc - qualquer coisa que não seja .mp3)
+        # Deletar arquivo original após conversão
+        try:
+            os.remove(downloaded_file)
+        except Exception:
+            pass
+
+    # Limpar qualquer arquivo temporário restante
     try:
-        for ext in ["webm", "m4a", "opus", "wav", "aac", "mkv", "flv", "avi"]:
+        for ext in ["webm", "m4a", "opus", "wav", "aac", "mkv", "flv", "avi", "mp4"]:
             temp_file = os.path.join(output_dir, f"{safe_title}.{ext}")
             if os.path.exists(temp_file):
                 os.remove(temp_file)
     except Exception:
         pass
 
-    return mp3_file
+    return mp3_path
 
 
 def download_mp4(video_url: str, title: str, output_dir: str = "downloads",
