@@ -2021,8 +2021,8 @@ class IsaacGUIApp:
                                 self._log(f"  → YouTube: todos os {len(results)} resultado(s) rejeitado(s)")
                         else:
                             self._log(f"  → YouTube: NENHUM RESULTADO ENCONTRADO")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        self._log(f"  → YouTube: ERRO ao processar resultados: {str(e)}")
 
                 if not copied:
                     self._log(f"  → FALHOU: adicionado à fila de retry")
@@ -2095,8 +2095,8 @@ class IsaacGUIApp:
                                     else:
                                         # Arquivo não foi criado (download ou conversão falhou)
                                         self._log(f"  → YouTube (var): resultado #{idx} FALHOU - arquivo não foi criado")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        self._log(f"  → YouTube (var): ERRO ao processar resultados: {str(e)}")
 
         # Segundo retry: tentar SEM validação rigorosa (fallback mode)
         # Se nenhuma variação funcionou com duração correta, tentar qualquer coisa
@@ -2156,8 +2156,8 @@ class IsaacGUIApp:
                                 else:
                                     # Arquivo não foi criado (download ou conversão falhou)
                                     self._log(f"  → YouTube (fallback): resultado #{idx} FALHOU - arquivo não foi criado")
-                except Exception:
-                    pass
+                except Exception as e:
+                    self._log(f"  → YouTube (fallback): ERRO ao processar resultados: {str(e)}")
 
         # Parar animação do spinner
         self.copying_in_progress = False
