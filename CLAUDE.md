@@ -1,4 +1,4 @@
-aj# CLAUDE.md
+# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -7,6 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **cdripper-yt** is a multi-platform music downloader with dual functionality:
 - Download MP3s from YouTube
 - Copy MP3s from physical CDs to local storage with automatic YouTube fallback (if CD read fails)
+- Download videos from YouTube as MP4 with real-time progress tracking
+- Download entire YouTube playlists as MP3s
 
 The project provides both CLI and GUI interfaces, and can be compiled to native executables for Windows, macOS, and Linux.
 
@@ -25,11 +27,22 @@ This application is specifically designed for **autistic children and individual
 ### Core Modules
 
 **cdripper_utils.py** — Shared utility module used by both CLI and GUI:
-- YouTube search and download functions (using yt-dlp)
-- Cross-platform CD drive detection (macOS `/Volumes`, Windows drive letters, Linux `/mnt`/`/media`)
-- MP3 file discovery and organization
-- Progress tracking for downloads
-- Filename sanitization
+- **YouTube Operations**:
+  - `search_youtube(query, max_results, expected_duration_secs)` — Search YouTube videos
+  - `download_mp3(url, title, output_dir)` — Download and convert to MP3 (with FFmpeg)
+  - `download_mp4(url, title, output_dir, progress_hook)` — Download video as MP4 (supports progress callbacks)
+  - `get_name_variations(title)` — Generate search variations for retry logic
+  - `enrich_mp3_from_internet(mp3_path, url)` — Add metadata and artwork to MP3 files from YouTube
+  - `apply_artwork_to_mp3(mp3_path, metadata)` — Embed album art into MP3 ID3 tags
+- **CD Operations**:
+  - `find_cd_drives()` — Detect CD/DVD drives (platform-specific)
+  - `find_mp3_files(directory)` — Recursively find MP3 files, grouped by folder
+- **Metadata & Utilities**:
+  - `get_mp3_metadata(path)` — Extract duration and artwork from MP3 files
+  - `sanitize_filename(name)` — Remove unsafe characters from filenames
+  - `fetch_playlist_tracks(query)` — Extract tracks from YouTube playlists
+  - `validate_mp3_duration(path, expected_secs, tolerance_percent)` — Verify downloaded file duration matches expected
+- **Logging**: `setup_logging(log_file)`, `get_logger()` — File-based logging system
 
 **cdripper-console.py** — Command-line interface:
 - Menu-driven TUI with colored output (colorama)
@@ -38,9 +51,14 @@ This application is specifically designed for **autistic children and individual
 
 **cdripper-gui.py** (Isaac GUI) — Tkinter-based GUI:
 - Child-friendly interface with large buttons and colorful design
-- Same functionality as console but with visual UI
+- Four tabs: YouTube Search, Copy CD, Playlist, Download Video (MP4)
 - Requires system tkinter (not a pip package)
 - Imports from cdripper_utils
+- Features:
+  - `📺 YouTube` — Search and download MP3 from YouTube
+  - `💿 Copiar CD` — Copy MP3s from physical CD (with YouTube fallback)
+  - `💿 Playlist` — Download entire YouTube playlists as MP3
+  - `🎬 Baixar Vídeo` — Search and download videos as MP4 with size/speed display
 
 ### Build System
 
@@ -75,6 +93,17 @@ python3 cdripper-console.py
 python3 cdripper-gui.py
 ```
 
+### Debugging & Logging
+```bash
+# View live logs during execution
+tail -f cdripper.log
+
+# Analyze logs after completion
+cat cdripper.log | grep "FALHOU\|SUCESSO\|YouTube\|CD:"
+```
+
+All operations are automatically logged to `cdripper.log` with timestamps (timestamp - level - message format).
+
 ## User Features
 
 ### Folder Selection
@@ -106,6 +135,8 @@ pyinstaller -y --onefile --windowed --name "cdripper" cdripper-gui.py
 - `yt-dlp >= 2024.0.0` — YouTube downloader and metadata extraction
 - `colorama >= 0.4.6` — Terminal color output
 - `python-dateutil >= 2.8.0` — Date utilities
+- `mutagen >= 1.47.0` — MP3 metadata editing
+- `Pillow >= 10.0.0` — Image processing for artwork
 
 **System:**
 - `tkinter` — GUI toolkit (comes with Python but requires system install on Linux):
@@ -116,6 +147,34 @@ pyinstaller -y --onefile --windowed --name "cdripper" cdripper-gui.py
 
 **Optional:**
 - `ffmpeg` — Audio format conversion (improves MP3 quality from YouTube downloads)
+
+## GUI Components & Patterns
+
+### Win7ProgressBar (Custom Widget)
+- Custom `tk.Canvas` widget styled like Windows 7 progress bar
+- Supports `bar["value"]` and `bar["maximum"]` dictionary interface for compatibility
+- Features animated green gradient with moving stripe pattern
+- Used in all tabs for download/copy progress visualization
+- Methods: `start_animation()`, `stop_animation()`, `set_value()`
+
+### Progress Hooks & Callbacks
+- Downloads use `progress_hook` callbacks to update GUI in real-time
+- Hooks receive dict from yt-dlp with: `total_bytes`, `downloaded_bytes`, `speed`, `status`
+- GUI updates via `self.root.after(0, ...)` to run on main thread (thread-safe)
+- Format: bytes to MB conversion (`value / (1024 * 1024)`), speed calculation, ETA estimation
+
+### Thread Pattern
+- All network operations (search, download) run in daemon threads
+- GUI updates scheduled back to main thread via `self.root.after(0, callback)`
+- Prevents UI freezing during long operations
+- Cancellation via flags: `self.cancel_copy`, `self.video_cancel`, `self.playlist_cancel`
+
+### Details Log Widget
+- `self.cd_details_text` — Read-only Text widget showing operation results
+- Populated via `_update_details_log(message)` method during file processing
+- Displays: `✔ CD: filename` (success from any source)
+- Shows real-time progress as files are processed
+- Auto-scrolls to bottom to show latest operations
 
 ## Key Design Patterns
 
@@ -131,8 +190,8 @@ pyinstaller -y --onefile --windowed --name "cdripper" cdripper-gui.py
    - yt-dlp auto-installs if missing
    - Missing tkinter provides clear installation instructions
 
-4. **Per-File Fallback Strategy with Smart Retries**: For each file being copied from CD:
-   - First attempts to copy from physical CD
+4. **Per-File Fallback Strategy with Smart Retries** (`copy_cd_with_fallback_gui()`): For each file being copied from CD:
+   - First attempts to copy from physical CD (with timeout-based read test)
    - If that fails, immediately searches YouTube and downloads the MP3
    - Marks files that fail both CD copy and first YouTube search for retry
    - After initial pass, retries failed files with name variations:
@@ -140,7 +199,8 @@ pyinstaller -y --onefile --windowed --name "cdripper" cdripper-gui.py
      - Removes parenthetical content ("Música (Remix)" → "Música")
      - Removes brackets ("Música [Official]" → "Música")
      - Uses first 2-3 words if title is long
-   - Shows progress with emoji feedback (✔ for CD success, 🎵 for YouTube success, ⊘ if neither works)
+   - Third pass: tries WITHOUT duration validation (fallback mode)
+   - Shows progress with emoji feedback (✔ CD success, displays as `✔ CD:` in details log)
    - Never exposes errors to the user; silently handles all failures
 
 ## Development Notes
@@ -153,6 +213,48 @@ pyinstaller -y --onefile --windowed --name "cdripper" cdripper-gui.py
   - File path operations
 
 - **Testing CD Features**: Requires actual CD drive and MP3-containing media; console and GUI can be tested independently
+
+- **GUI Colors & Fonts**:
+  - Title font: `("Arial Rounded MT Bold", 28)`
+  - Section font: `("Arial Rounded MT Bold", 19)`
+  - Text font: `("Arial", 14)`
+  - Button font: `("Arial Rounded MT Bold", 16)`
+  - Primary colors: `#F6FBFF` (background), `#CDEBFF` (header), `#00B4D8` (search), `#2A9D8F` (download)
+  - Defined in `_build_styles()` method
+
+## Logging System
+
+**File**: `cdripper.log` (created automatically in working directory)
+
+**Features**:
+- Initialized at GUI startup via `setup_logging("cdripper.log")`
+- All console output also written to file with timestamps
+- Format: `YYYY-MM-DD HH:MM:SS - LEVEL - message`
+- Useful for post-mortem analysis of which files succeeded/failed
+
+**Key Log Entries**:
+- `DEBUG COPY: Total de X arquivo(s) para processar` — Copy operation started
+- `[##/##] Processando: filename` — File being processed
+- `→ CD: SUCESSO` — File copied from physical CD
+- `→ CD: FALHOU - tentando YouTube...` — CD copy failed, trying YouTube
+- `→ YouTube: N resultado(s) encontrado(s)` — YouTube search results count
+- `→ YouTube: baixando URL` — Download starting
+- `→ YouTube: SUCESSO` — File successfully downloaded
+- `✔ SUCESSO` — File successfully obtained (CD or YouTube)
+- `DEBUG SUMMARY: X de Y arquivo(s) processado(s)` — Operation completed
+- `Faixas que ficaram incompletas (N):` — Files that failed all methods
+
+**Debugging with logs**:
+```bash
+# Monitor during operation
+tail -f cdripper.log
+
+# Find failed files
+grep "FALHOU\|incompleta" cdripper.log
+
+# Count successes
+grep "✔ SUCESSO" cdripper.log | wc -l
+```
 
 ## Accessibility & Inclusive Design Standards
 
@@ -173,7 +275,7 @@ pyinstaller -y --onefile --windowed --name "cdripper" cdripper-gui.py
    - Process each file independently: try CD copy → if fails, try YouTube immediately
    - Never wait to collect failures or show error summaries
    - Silently handle all edge cases; users only see progress indicators
-   - Display status with emoji (✔ CD copy ok, 🎵 YouTube download ok, ⊘ unavailable)
+   - Display status with emoji (✔ CD copy ok from any source, ⊘ unavailable)
    - Never expose exception details or technical error messages
 
 4. **Console Output (cdripper-console.py)**:
