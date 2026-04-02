@@ -1994,8 +1994,7 @@ class IsaacGUIApp:
                                         else:
                                             # Duração OK (ou validação desabilitada), aceitar arquivo
                                             self._log(f"  → YouTube: resultado #{idx} SUCESSO")
-                                            apply_artwork_to_mp3(mp3_path, cd_metadata)
-                                            # Enriquecer tags com metadados do YouTube
+                                            # Não adicionar artwork do CD — usar apenas metadados do YouTube
                                             enrich_mp3_from_internet(mp3_path, url=url)
                                             success += 1
                                             self.root.after(
@@ -2079,8 +2078,7 @@ class IsaacGUIApp:
                                         else:
                                             # Duração OK (ou validação desabilitada), aceitar arquivo
                                             self._log(f"  → YouTube (var): resultado #{idx} SUCESSO")
-                                            apply_artwork_to_mp3(mp3_path, cd_metadata)
-                                            # Enriquecer tags com metadados do YouTube
+                                            # Não adicionar artwork do CD — usar apenas metadados do YouTube
                                             enrich_mp3_from_internet(mp3_path, url=url)
                                             success += 1
                                             self.root.after(
@@ -2140,8 +2138,7 @@ class IsaacGUIApp:
                                     else:
                                         # Fallback mode: aceita mesmo que seja versão diferente
                                         self._log(f"  → YouTube (fallback): resultado #{idx} SUCESSO")
-                                        apply_artwork_to_mp3(mp3_path, cd_metadata)
-                                        # Enriquecer tags com metadados do YouTube
+                                        # Não adicionar artwork do CD — usar apenas metadados do YouTube
                                         enrich_mp3_from_internet(mp3_path, url=url)
                                         success += 1
                                         self.root.after(
