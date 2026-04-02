@@ -616,6 +616,15 @@ class IsaacGUIApp:
         )
         self.cd_progress_speed.pack(side="left", padx=(20, 0))
 
+        self.cd_progress_elapsed = tk.Label(
+            progress_info,
+            text="Copiando a 0min",
+            font=("Arial", 12),
+            bg="#F6FBFF",
+            fg="#666666",
+        )
+        self.cd_progress_elapsed.pack(side="left", padx=(20, 0))
+
         self.cd_progress_eta = tk.Label(
             progress_info,
             text="ETA: --",
@@ -1217,6 +1226,7 @@ class IsaacGUIApp:
         self.cd_source_dir_label.configure(text="")
         self.cd_progress_percent.configure(text="0%")
         self.cd_progress_count.configure(text=f"0/{total} arquivos")
+        self.cd_progress_elapsed.configure(text="Copiando a 0min")
 
     def _hide_progress_bar(self) -> None:
         """Oculta a barra de progresso e mostra o preview text."""
@@ -1225,7 +1235,7 @@ class IsaacGUIApp:
         self.cd_preview_text.pack(fill="both", expand=True)
 
     def _update_progress(self, done: int, total: int, filename: str = "", source_dir: str = "") -> None:
-        """Atualiza a barra de progresso com velocidade, ETA e diretório de origem."""
+        """Atualiza a barra de progresso com velocidade, ETA, tempo decorrido e diretório de origem."""
         pct = int((done / total * 100)) if total > 0 else 0
         self.cd_progress_bar["value"] = done
 
@@ -1235,8 +1245,21 @@ class IsaacGUIApp:
         if filename:
             self.cd_current_file_label.configure(text=f"Arquivo: {filename}")
 
-        # Calcular velocidade e ETA
+        # Calcular tempo decorrido, velocidade e ETA
         elapsed = time.time() - self.copy_start_time
+
+        # Formatar tempo decorrido
+        elapsed_hours = int(elapsed // 3600)
+        elapsed_min = int((elapsed % 3600) // 60)
+        elapsed_sec = int(elapsed % 60)
+
+        if elapsed_hours > 0:
+            elapsed_text = f"Copiando a {elapsed_hours}h {elapsed_min}min"
+        elif elapsed_min > 0:
+            elapsed_text = f"Copiando a {elapsed_min}min {elapsed_sec}s"
+        else:
+            elapsed_text = f"Copiando a {int(elapsed)}s"
+
         if elapsed > 0 and done > 0:
             speed_kb_s = (done / elapsed) / 1024 if elapsed > 0 else 0
             remaining = total - done
@@ -1259,6 +1282,7 @@ class IsaacGUIApp:
         self.cd_progress_percent.configure(text=f"{pct}%")
         self.cd_progress_count.configure(text=f"{done}/{total} arquivos")
         self.cd_progress_speed.configure(text=speed_text)
+        self.cd_progress_elapsed.configure(text=elapsed_text)
         self.cd_progress_eta.configure(text=eta_text)
 
         if filename:
