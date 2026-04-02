@@ -2014,6 +2014,9 @@ class IsaacGUIApp:
                                             )
                                             copied = True
                                             break
+                                    else:
+                                        # Arquivo não foi criado (download ou conversão falhou)
+                                        self._log(f"  → YouTube: resultado #{idx} FALHOU - arquivo não foi criado")
 
                             if not copied:
                                 self._log(f"  → YouTube: todos os {len(results)} resultado(s) rejeitado(s)")
@@ -2062,17 +2065,20 @@ class IsaacGUIApp:
                                     url = f"https://www.youtube.com/watch?v={result['id']}"
 
                                 if url:
+                                    self._log(f"  → YouTube (var): tentando resultado #{idx} de {len(results)}: {url}")
                                     mp3_path = download_mp3(url, original_title, folder_dest)
                                     if os.path.exists(mp3_path):
                                         # Validar duração antes de aceitar (se habilitado)
                                         if cd_duration and use_strict and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
                                             # Duração muito errada, deletar e tentar próximo resultado (apenas se validação estiver habilitada)
+                                            self._log(f"  → YouTube (var): resultado #{idx} REJEITADO - duração não corresponde")
                                             try:
                                                 os.remove(mp3_path)
                                             except Exception:
                                                 pass
                                         else:
                                             # Duração OK (ou validação desabilitada), aceitar arquivo
+                                            self._log(f"  → YouTube (var): resultado #{idx} SUCESSO")
                                             apply_artwork_to_mp3(mp3_path, cd_metadata)
                                             # Enriquecer tags com metadados do YouTube
                                             enrich_mp3_from_internet(mp3_path, url=url)
@@ -2088,6 +2094,9 @@ class IsaacGUIApp:
                                                 ),
                                             )
                                             break
+                                    else:
+                                        # Arquivo não foi criado (download ou conversão falhou)
+                                        self._log(f"  → YouTube (var): resultado #{idx} FALHOU - arquivo não foi criado")
                     except Exception:
                         pass
 
@@ -2111,23 +2120,26 @@ class IsaacGUIApp:
 
                     if results:
                         # Tentar cada resultado até encontrar um que passe
-                        for result in results:
+                        for idx, result in enumerate(results, 1):
                             url = result.get("url") or result.get("webpage_url")
                             if not url and result.get("id"):
                                 url = f"https://www.youtube.com/watch?v={result['id']}"
 
                             if url:
+                                self._log(f"  → YouTube (fallback): tentando resultado #{idx} de {len(results)}: {url}")
                                 mp3_path = download_mp3(url, original_title, folder_dest)
                                 if os.path.exists(mp3_path):
                                     # Validação SEM rigor: aceita qualquer duração > 30s
                                     if cd_duration and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30, strict=False):
                                         # Mesmo em fallback mode, rejeita clipes muito curtos
+                                        self._log(f"  → YouTube (fallback): resultado #{idx} REJEITADO - muito curto")
                                         try:
                                             os.remove(mp3_path)
                                         except Exception:
                                             pass
                                     else:
                                         # Fallback mode: aceita mesmo que seja versão diferente
+                                        self._log(f"  → YouTube (fallback): resultado #{idx} SUCESSO")
                                         apply_artwork_to_mp3(mp3_path, cd_metadata)
                                         # Enriquecer tags com metadados do YouTube
                                         enrich_mp3_from_internet(mp3_path, url=url)
@@ -2144,6 +2156,9 @@ class IsaacGUIApp:
                                         )
                                         failed.remove(item)
                                         break
+                                else:
+                                    # Arquivo não foi criado (download ou conversão falhou)
+                                    self._log(f"  → YouTube (fallback): resultado #{idx} FALHOU - arquivo não foi criado")
                 except Exception:
                     pass
 
