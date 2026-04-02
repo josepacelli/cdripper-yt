@@ -1293,7 +1293,7 @@ class IsaacGUIApp:
         self.root.update_idletasks()
 
     def _animate_spinner(self) -> None:
-        """Anima continuamente o spinner enquanto cópia está em andamento."""
+        """Anima continuamente o spinner e atualiza tempo decorrido enquanto cópia está em andamento."""
         if not self.copying_in_progress:
             return
 
@@ -1306,6 +1306,21 @@ class IsaacGUIApp:
                 filename_part = current_text.split(" Processando:", 1)[1].strip()
                 display_name = filename_part[:45] + "…" if len(filename_part) > 45 else filename_part
                 self.cd_current_file_label.configure(text=f"{spinner_frame} Processando: {display_name}")
+
+        # Atualizar tempo decorrido a cada 100ms
+        elapsed = time.time() - self.copy_start_time
+        elapsed_hours = int(elapsed // 3600)
+        elapsed_min = int((elapsed % 3600) // 60)
+        elapsed_sec = int(elapsed % 60)
+
+        if elapsed_hours > 0:
+            elapsed_text = f"Copiando a {elapsed_hours}h {elapsed_min}min"
+        elif elapsed_min > 0:
+            elapsed_text = f"Copiando a {elapsed_min}min {elapsed_sec}s"
+        else:
+            elapsed_text = f"Copiando a {int(elapsed)}s"
+
+        self.cd_progress_elapsed.configure(text=elapsed_text)
 
         # Agendar próxima animação em 100ms
         self.spinner_animation_id = self.root.after(100, self._animate_spinner)
