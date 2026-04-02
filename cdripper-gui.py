@@ -1963,6 +1963,7 @@ class IsaacGUIApp:
                             self._log(f"  → YouTube: buscando '{title}' (duração desconhecida)")
                         # Normalizar nome para melhorar busca (remove underscores, espaços duplicados)
                         normalized_title = normalize_search_query(title)
+                        self._log(f"  → YouTube: query normalizada: '{normalized_title}'")
                         results = search_youtube(normalized_title, max_results=5, expected_duration_secs=cd_duration)
 
                         # Se não encontrar pela faixa, tenta pelo artista/pasta pai
@@ -1985,41 +1986,45 @@ class IsaacGUIApp:
 
                                 if url:
                                     self._log(f"  → YouTube: tentando resultado #{idx} de {len(results)}: {url}")
-                                    mp3_path = download_mp3(url, title, folder_dest)
-                                    if os.path.exists(mp3_path):
-                                        # Validar duração antes de aceitar (se habilitado)
-                                        if cd_duration and use_strict and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
-                                            # Duração muito errada, deletar e tentar próximo resultado
-                                            self._log(f"  → YouTube: resultado #{idx} REJEITADO - duração não corresponde")
-                                            try:
-                                                os.remove(mp3_path)
-                                            except Exception:
-                                                pass
+                                    try:
+                                        mp3_path = download_mp3(url, title, folder_dest)
+                                        if os.path.exists(mp3_path):
+                                            # Validar duração antes de aceitar (se habilitado)
+                                            if cd_duration and use_strict and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
+                                                # Duração muito errada, deletar e tentar próximo resultado
+                                                self._log(f"  → YouTube: resultado #{idx} REJEITADO - duração não corresponde")
+                                                try:
+                                                    os.remove(mp3_path)
+                                                except Exception:
+                                                    pass
+                                            else:
+                                                # Duração OK (ou validação desabilitada), aceitar arquivo
+                                                self._log(f"  → YouTube: resultado #{idx} SUCESSO")
+                                                # Não adicionar artwork do CD — usar apenas metadados do YouTube
+                                                enrich_mp3_from_internet(mp3_path, url=url)
+                                                success += 1
+                                                self.root.after(
+                                                    0,
+                                                    lambda d=done, t=total, n=filename, s=folder_src: self._update_progress(d, t, n, s),
+                                                )
+                                                self.root.after(
+                                                    0,
+                                                    lambda n=filename: self._update_details_log(f"✔ CD: {n}"),
+                                                )
+                                                self.root.after(
+                                                    0,
+                                                    lambda m=cd_metadata: self._update_cd_artwork(
+                                                        m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
+                                                    ),
+                                                )
+                                                copied = True
+                                                break
                                         else:
-                                            # Duração OK (ou validação desabilitada), aceitar arquivo
-                                            self._log(f"  → YouTube: resultado #{idx} SUCESSO")
-                                            # Não adicionar artwork do CD — usar apenas metadados do YouTube
-                                            enrich_mp3_from_internet(mp3_path, url=url)
-                                            success += 1
-                                            self.root.after(
-                                                0,
-                                                lambda d=done, t=total, n=filename, s=folder_src: self._update_progress(d, t, n, s),
-                                            )
-                                            self.root.after(
-                                                0,
-                                                lambda n=filename: self._update_details_log(f"✔ CD: {n}"),
-                                            )
-                                            self.root.after(
-                                                0,
-                                                lambda m=cd_metadata: self._update_cd_artwork(
-                                                    m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
-                                                ),
-                                            )
-                                            copied = True
-                                            break
-                                    else:
-                                        # Arquivo não foi criado (download ou conversão falhou)
-                                        self._log(f"  → YouTube: resultado #{idx} FALHOU - arquivo não foi criado")
+                                            # Arquivo não foi criado (download ou conversão falhou)
+                                            self._log(f"  → YouTube: resultado #{idx} FALHOU - arquivo não foi criado")
+                                    except Exception as e:
+                                        # Erro ao processar este resultado específico, tentar próximo
+                                        self._log(f"  → YouTube: resultado #{idx} ERRO - {str(e)}")
 
                             if not copied:
                                 self._log(f"  → YouTube: todos os {len(results)} resultado(s) rejeitado(s)")
@@ -2052,6 +2057,7 @@ class IsaacGUIApp:
                     try:
                         # Normalizar nome para melhorar busca (remove underscores, espaços duplicados)
                         normalized_var = normalize_search_query(var_title)
+                        self._log(f"  → YouTube (var): tentando variação '{var_title}' → normalizada: '{normalized_var}'")
                         results = search_youtube(normalized_var, max_results=5, expected_duration_secs=cd_duration)
 
                         # Se não encontrar pela variação, tenta pelo artista/pasta pai
@@ -2118,12 +2124,14 @@ class IsaacGUIApp:
                 try:
                     # Normalizar nome para melhorar busca (remove underscores, espaços duplicados)
                     normalized_var = normalize_search_query(var_title)
+                    self._log(f"  → YouTube (fallback): tentando variação '{var_title}' → normalizada: '{normalized_var}'")
                     results = search_youtube(normalized_var, max_results=5, expected_duration_secs=cd_duration)
 
                     # Se não encontrar pela variação, tenta pelo artista/pasta pai
                     if not results and rel_folder and rel_folder != ".":
                         parent_name = os.path.basename(rel_folder)
                         normalized_parent = normalize_search_query(parent_name)
+                        self._log(f"  → YouTube (fallback): variação não encontrada, tentando pasta pai '{parent_name}' → normalizada: '{normalized_parent}'")
                         results = search_youtube(normalized_parent, max_results=5, expected_duration_secs=cd_duration)
 
                     if results:
