@@ -10,6 +10,7 @@ Interface gráfica com botões grandes para:
 
 from __future__ import annotations
 
+import json
 import os
 import platform
 import shutil
@@ -171,6 +172,13 @@ class Win7ProgressBar(tk.Canvas):
             self.animation_id = self.after(50, self._animate)
 
 
+# Configurações persistentes
+SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cdripper_settings.json")
+DEFAULT_SETTINGS = {
+    "duration_validation": False,  # padrão desabilitado
+}
+
+
 class IsaacGUIApp:
     def __init__(self, root: tk.Tk) -> None:
         # Configurar logging para arquivo
@@ -184,6 +192,10 @@ class IsaacGUIApp:
 
         self.root = root
         self.version = get_version()
+
+        # Carregar configurações persistentes
+        self.settings = self._load_settings()
+
         self.root.title(f"🎵 Isaac Music v{self.version} - Modo Infantil")
         self.root.geometry("1280x770")
         self.root.minsize(980, 680)
@@ -292,16 +304,19 @@ class IsaacGUIApp:
         self.cd_tab = tk.Frame(notebook, bg="#F6FBFF")
         self.playlist_tab = tk.Frame(notebook, bg="#F6FBFF")
         self.video_tab = tk.Frame(notebook, bg="#F6FBFF")
+        self.settings_tab = tk.Frame(notebook, bg="#F6FBFF")
 
         notebook.add(self.youtube_tab, text="📺 YouTube")
         notebook.add(self.cd_tab, text="💿 Copiar CD")
         notebook.add(self.playlist_tab, text="💿 Playlist")
         notebook.add(self.video_tab, text="🎬 Baixar Vídeo")
+        notebook.add(self.settings_tab, text="⚙️ Configurações")
 
         self._build_youtube_tab()
         self._build_cd_tab()
         self._build_playlist_tab()
         self._build_video_tab()
+        self._build_settings_tab()
 
     def _build_youtube_tab(self) -> None:
         container = tk.Frame(self.youtube_tab, bg="#F6FBFF")
@@ -1035,6 +1050,134 @@ class IsaacGUIApp:
             command=self._cancel_video,
         )
         self.video_cancel_btn.pack(side="right")
+
+    def _load_settings(self) -> dict:
+        """Carrega configurações persistentes do arquivo JSON."""
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                # Mescla com defaults para garantir chaves novas
+                return {**DEFAULT_SETTINGS, **data}
+        except Exception:
+            return dict(DEFAULT_SETTINGS)
+
+    def _save_settings(self) -> None:
+        """Salva configurações persistentes em arquivo JSON."""
+        try:
+            with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+                json.dump(self.settings, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+
+    def _build_settings_tab(self) -> None:
+        """Constrói a aba de Configurações."""
+        container = tk.Frame(self.settings_tab, bg="#F6FBFF")
+        container.pack(fill="both", expand=True, padx=16, pady=16)
+
+        # Título
+        title = tk.Label(
+            container,
+            text="⚙️ Configurações",
+            font=("Arial Rounded MT Bold", 19),
+            bg="#F6FBFF",
+            fg="#175A8A",
+        )
+        title.pack(anchor="w", pady=(0, 16))
+
+        # Seção: Cópia de CD / YouTube
+        section_frame = tk.Frame(container, bg="#F6FBFF")
+        section_frame.pack(fill="x", padx=0, pady=12, anchor="w")
+
+        section_label = tk.Label(
+            section_frame,
+            text="Cópia de CD / YouTube",
+            font=("Arial Rounded MT Bold", 14),
+            bg="#F6FBFF",
+            fg="#2A9D8F",
+        )
+        section_label.pack(anchor="w")
+
+        # Checkbox para validação de duração
+        self.duration_validation_var = tk.BooleanVar(
+            value=self.settings.get("duration_validation", False)
+        )
+
+        check_frame = tk.Frame(section_frame, bg="#F6FBFF")
+        check_frame.pack(fill="x", padx=0, pady=(8, 0), anchor="w")
+
+        checkbox = tk.Checkbutton(
+            check_frame,
+            text="Verificar duração ao baixar do YouTube",
+            variable=self.duration_validation_var,
+            font=("Arial", 12),
+            bg="#F6FBFF",
+            fg="#333333",
+            activebackground="#F6FBFF",
+            activeforeground="#333333",
+            selectcolor="#F6FBFF",
+            command=lambda: self._on_setting_changed(
+                "duration_validation", self.duration_validation_var
+            ),
+        )
+        checkbox.pack(anchor="w")
+
+        # Descrição
+        desc_frame = tk.Frame(section_frame, bg="#F6FBFF")
+        desc_frame.pack(fill="x", padx=20, pady=(6, 0), anchor="w")
+
+        desc_lines = [
+            "Desabilitado (padrão): Aceita qualquer download com mais de 30s",
+            "Habilitado: Rejeita se a duração for muito diferente do original",
+        ]
+        for line in desc_lines:
+            desc = tk.Label(
+                desc_frame,
+                text=line,
+                font=("Arial", 10),
+                bg="#F6FBFF",
+                fg="#666666",
+            )
+            desc.pack(anchor="w", pady=2)
+
+        # Espaço para o botão
+        button_frame = tk.Frame(container, bg="#F6FBFF")
+        button_frame.pack(fill="x", pady=(24, 0), anchor="w")
+
+        # Botão de salvar
+        save_btn = tk.Button(
+            button_frame,
+            text="💾 Salvar Configurações",
+            font=("Arial Rounded MT Bold", 12),
+            bg="#2A9D8F",
+            fg="white",
+            padx=20,
+            pady=10,
+            command=self._on_save_settings,
+            relief="flat",
+            cursor="hand2",
+        )
+        save_btn.pack(anchor="w")
+
+        # Status label
+        self.settings_status = tk.Label(
+            container,
+            text="",
+            font=("Arial", 11),
+            bg="#F6FBFF",
+            fg="#2A9D8F",
+        )
+        self.settings_status.pack(anchor="w", pady=(12, 0))
+
+    def _on_setting_changed(self, key: str, var: tk.BooleanVar) -> None:
+        """Callback para quando uma configuração é alterada."""
+        self.settings[key] = var.get()
+
+    def _on_save_settings(self) -> None:
+        """Salva configurações e mostra confirmação."""
+        self._save_settings()
+        self.settings_status.configure(text="✔ Configurações salvas com sucesso!")
+        # Limpar mensagem após 3 segundos
+        self.root.after(3000, lambda: self.settings_status.configure(text=""))
 
     def _search_video(self) -> None:
         """Busca vídeos no YouTube por nome ou URL."""
@@ -1836,17 +1979,18 @@ class IsaacGUIApp:
                                 self._log(f"  → YouTube: baixando {url}")
                                 mp3_path = download_mp3(url, title, folder_dest)
                                 if os.path.exists(mp3_path):
-                                    # Validar duração antes de aceitar
+                                    # Validar duração antes de aceitar (se habilitado)
                                     cd_duration = cd_metadata.get("duration_secs")
-                                    if cd_duration and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
-                                        # Duração muito errada, deletar e rejeitar
+                                    use_strict = self.settings.get("duration_validation", False)
+                                    if cd_duration and use_strict and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
+                                        # Duração muito errada, deletar e rejeitar (apenas se validação estiver habilitada)
                                         self._log(f"  → YouTube: REJEITADO - duração não corresponde")
                                         try:
                                             os.remove(mp3_path)
                                         except Exception:
                                             pass
                                     else:
-                                        # Duração OK, aceitar arquivo
+                                        # Duração OK (ou validação desabilitada), aceitar arquivo
                                         self._log(f"  → YouTube: SUCESSO")
                                         apply_artwork_to_mp3(mp3_path, cd_metadata)
                                         # Enriquecer tags com metadados do YouTube
@@ -1910,16 +2054,17 @@ class IsaacGUIApp:
                             if url:
                                 mp3_path = download_mp3(url, original_title, folder_dest)
                                 if os.path.exists(mp3_path):
-                                    # Validar duração antes de aceitar
+                                    # Validar duração antes de aceitar (se habilitado)
                                     cd_duration = cd_metadata.get("duration_secs")
-                                    if cd_duration and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
-                                        # Duração muito errada, deletar e tentar próxima variação
+                                    use_strict = self.settings.get("duration_validation", False)
+                                    if cd_duration and use_strict and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
+                                        # Duração muito errada, deletar e tentar próxima variação (apenas se validação estiver habilitada)
                                         try:
                                             os.remove(mp3_path)
                                         except Exception:
                                             pass
                                     else:
-                                        # Duração OK, aceitar arquivo
+                                        # Duração OK (ou validação desabilitada), aceitar arquivo
                                         apply_artwork_to_mp3(mp3_path, cd_metadata)
                                         # Enriquecer tags com metadados do YouTube
                                         enrich_mp3_from_internet(mp3_path, url=url)
