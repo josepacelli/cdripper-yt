@@ -1970,47 +1970,53 @@ class IsaacGUIApp:
 
                         if results:
                             self._log(f"  → YouTube: {len(results)} resultado(s) encontrado(s)")
-                            top = results[0]
-                            url = top.get("url") or top.get("webpage_url")
-                            if not url and top.get("id"):
-                                url = f"https://www.youtube.com/watch?v={top['id']}"
+                            cd_duration = cd_metadata.get("duration_secs")
+                            use_strict = self.settings.get("duration_validation", False)
 
-                            if url:
-                                self._log(f"  → YouTube: baixando {url}")
-                                mp3_path = download_mp3(url, title, folder_dest)
-                                if os.path.exists(mp3_path):
-                                    # Validar duração antes de aceitar (se habilitado)
-                                    cd_duration = cd_metadata.get("duration_secs")
-                                    use_strict = self.settings.get("duration_validation", False)
-                                    if cd_duration and use_strict and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
-                                        # Duração muito errada, deletar e rejeitar (apenas se validação estiver habilitada)
-                                        self._log(f"  → YouTube: REJEITADO - duração não corresponde")
-                                        try:
-                                            os.remove(mp3_path)
-                                        except Exception:
-                                            pass
-                                    else:
-                                        # Duração OK (ou validação desabilitada), aceitar arquivo
-                                        self._log(f"  → YouTube: SUCESSO")
-                                        apply_artwork_to_mp3(mp3_path, cd_metadata)
-                                        # Enriquecer tags com metadados do YouTube
-                                        enrich_mp3_from_internet(mp3_path, url=url)
-                                        success += 1
-                                        self.root.after(
-                                            0,
-                                            lambda d=done, t=total, n=filename, s=folder_src: self._update_progress(d, t, n, s),
-                                        )
-                                        self.root.after(
-                                            0,
-                                            lambda n=filename: self._update_details_log(f"✔ CD: {n}"),
-                                        )
-                                        self.root.after(
-                                            0,
-                                            lambda m=cd_metadata: self._update_cd_artwork(
-                                                m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
-                                            ),
-                                        )
-                                        copied = True
+                            # Tentar cada resultado até encontrar um que passe
+                            for idx, result in enumerate(results, 1):
+                                url = result.get("url") or result.get("webpage_url")
+                                if not url and result.get("id"):
+                                    url = f"https://www.youtube.com/watch?v={result['id']}"
+
+                                if url:
+                                    self._log(f"  → YouTube: tentando resultado #{idx} de {len(results)}: {url}")
+                                    mp3_path = download_mp3(url, title, folder_dest)
+                                    if os.path.exists(mp3_path):
+                                        # Validar duração antes de aceitar (se habilitado)
+                                        if cd_duration and use_strict and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
+                                            # Duração muito errada, deletar e tentar próximo resultado
+                                            self._log(f"  → YouTube: resultado #{idx} REJEITADO - duração não corresponde")
+                                            try:
+                                                os.remove(mp3_path)
+                                            except Exception:
+                                                pass
+                                        else:
+                                            # Duração OK (ou validação desabilitada), aceitar arquivo
+                                            self._log(f"  → YouTube: resultado #{idx} SUCESSO")
+                                            apply_artwork_to_mp3(mp3_path, cd_metadata)
+                                            # Enriquecer tags com metadados do YouTube
+                                            enrich_mp3_from_internet(mp3_path, url=url)
+                                            success += 1
+                                            self.root.after(
+                                                0,
+                                                lambda d=done, t=total, n=filename, s=folder_src: self._update_progress(d, t, n, s),
+                                            )
+                                            self.root.after(
+                                                0,
+                                                lambda n=filename: self._update_details_log(f"✔ CD: {n}"),
+                                            )
+                                            self.root.after(
+                                                0,
+                                                lambda m=cd_metadata: self._update_cd_artwork(
+                                                    m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
+                                                ),
+                                            )
+                                            copied = True
+                                            break
+
+                            if not copied:
+                                self._log(f"  → YouTube: todos os {len(results)} resultado(s) rejeitado(s)")
                         else:
                             self._log(f"  → YouTube: NENHUM RESULTADO ENCONTRADO")
                     except Exception:
@@ -2046,40 +2052,42 @@ class IsaacGUIApp:
                             results = search_youtube(parent_name, max_results=5, expected_duration_secs=cd_duration)
 
                         if results:
-                            top = results[0]
-                            url = top.get("url") or top.get("webpage_url")
-                            if not url and top.get("id"):
-                                url = f"https://www.youtube.com/watch?v={top['id']}"
+                            cd_duration = cd_metadata.get("duration_secs")
+                            use_strict = self.settings.get("duration_validation", False)
 
-                            if url:
-                                mp3_path = download_mp3(url, original_title, folder_dest)
-                                if os.path.exists(mp3_path):
-                                    # Validar duração antes de aceitar (se habilitado)
-                                    cd_duration = cd_metadata.get("duration_secs")
-                                    use_strict = self.settings.get("duration_validation", False)
-                                    if cd_duration and use_strict and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
-                                        # Duração muito errada, deletar e tentar próxima variação (apenas se validação estiver habilitada)
-                                        try:
-                                            os.remove(mp3_path)
-                                        except Exception:
-                                            pass
-                                    else:
-                                        # Duração OK (ou validação desabilitada), aceitar arquivo
-                                        apply_artwork_to_mp3(mp3_path, cd_metadata)
-                                        # Enriquecer tags com metadados do YouTube
-                                        enrich_mp3_from_internet(mp3_path, url=url)
-                                        success += 1
-                                        self.root.after(
-                                            0,
-                                            lambda n=filename: self._update_details_log(f"🎵 YouTube (var): {n}"),
-                                        )
-                                        self.root.after(
-                                            0,
-                                            lambda m=cd_metadata: self._update_cd_artwork(
-                                                m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
-                                            ),
-                                        )
-                                        break
+                            # Tentar cada resultado até encontrar um que passe
+                            for idx, result in enumerate(results, 1):
+                                url = result.get("url") or result.get("webpage_url")
+                                if not url and result.get("id"):
+                                    url = f"https://www.youtube.com/watch?v={result['id']}"
+
+                                if url:
+                                    mp3_path = download_mp3(url, original_title, folder_dest)
+                                    if os.path.exists(mp3_path):
+                                        # Validar duração antes de aceitar (se habilitado)
+                                        if cd_duration and use_strict and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30):
+                                            # Duração muito errada, deletar e tentar próximo resultado (apenas se validação estiver habilitada)
+                                            try:
+                                                os.remove(mp3_path)
+                                            except Exception:
+                                                pass
+                                        else:
+                                            # Duração OK (ou validação desabilitada), aceitar arquivo
+                                            apply_artwork_to_mp3(mp3_path, cd_metadata)
+                                            # Enriquecer tags com metadados do YouTube
+                                            enrich_mp3_from_internet(mp3_path, url=url)
+                                            success += 1
+                                            self.root.after(
+                                                0,
+                                                lambda n=filename: self._update_details_log(f"🎵 YouTube (var): {n}"),
+                                            )
+                                            self.root.after(
+                                                0,
+                                                lambda m=cd_metadata: self._update_cd_artwork(
+                                                    m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
+                                                ),
+                                            )
+                                            break
                     except Exception:
                         pass
 
@@ -2102,39 +2110,40 @@ class IsaacGUIApp:
                         results = search_youtube(parent_name, max_results=5, expected_duration_secs=cd_duration)
 
                     if results:
-                        top = results[0]
-                        url = top.get("url") or top.get("webpage_url")
-                        if not url and top.get("id"):
-                            url = f"https://www.youtube.com/watch?v={top['id']}"
+                        # Tentar cada resultado até encontrar um que passe
+                        for result in results:
+                            url = result.get("url") or result.get("webpage_url")
+                            if not url and result.get("id"):
+                                url = f"https://www.youtube.com/watch?v={result['id']}"
 
-                        if url:
-                            mp3_path = download_mp3(url, original_title, folder_dest)
-                            if os.path.exists(mp3_path):
-                                # Validação SEM rigor: aceita qualquer duração > 30s
-                                if cd_duration and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30, strict=False):
-                                    # Mesmo em fallback mode, rejeita clipes muito curtos
-                                    try:
-                                        os.remove(mp3_path)
-                                    except Exception:
-                                        pass
-                                else:
-                                    # Fallback mode: aceita mesmo que seja versão diferente
-                                    apply_artwork_to_mp3(mp3_path, cd_metadata)
-                                    # Enriquecer tags com metadados do YouTube
-                                    enrich_mp3_from_internet(mp3_path, url=url)
-                                    success += 1
-                                    self.root.after(
-                                        0,
-                                        lambda n=filename: self._update_details_log(f"🎵 YouTube (fallback): {n}"),
-                                    )
-                                    self.root.after(
-                                        0,
-                                        lambda m=cd_metadata: self._update_cd_artwork(
-                                            m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
-                                        ),
-                                    )
-                                    failed.remove(item)
-                                    break
+                            if url:
+                                mp3_path = download_mp3(url, original_title, folder_dest)
+                                if os.path.exists(mp3_path):
+                                    # Validação SEM rigor: aceita qualquer duração > 30s
+                                    if cd_duration and not validate_mp3_duration(mp3_path, cd_duration, tolerance_percent=30, strict=False):
+                                        # Mesmo em fallback mode, rejeita clipes muito curtos
+                                        try:
+                                            os.remove(mp3_path)
+                                        except Exception:
+                                            pass
+                                    else:
+                                        # Fallback mode: aceita mesmo que seja versão diferente
+                                        apply_artwork_to_mp3(mp3_path, cd_metadata)
+                                        # Enriquecer tags com metadados do YouTube
+                                        enrich_mp3_from_internet(mp3_path, url=url)
+                                        success += 1
+                                        self.root.after(
+                                            0,
+                                            lambda n=filename: self._update_details_log(f"🎵 YouTube (fallback): {n}"),
+                                        )
+                                        self.root.after(
+                                            0,
+                                            lambda m=cd_metadata: self._update_cd_artwork(
+                                                m.get("artwork_bytes"), m.get("artwork_mime", "image/jpeg")
+                                            ),
+                                        )
+                                        failed.remove(item)
+                                        break
                 except Exception:
                     pass
 
