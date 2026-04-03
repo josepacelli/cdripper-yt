@@ -177,6 +177,7 @@ class Win7ProgressBar(tk.Canvas):
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cdripper_settings.json")
 DEFAULT_SETTINGS = {
     "duration_validation": False,  # padrão desabilitado
+    "youtube_artwork": True,  # padrão: incluir capa
 }
 
 
@@ -1140,6 +1141,48 @@ class IsaacGUIApp:
             )
             desc.pack(anchor="w", pady=2)
 
+        # Checkbox para capa do MP3
+        self.youtube_artwork_var = tk.BooleanVar(
+            value=self.settings.get("youtube_artwork", True)
+        )
+
+        check_frame2 = tk.Frame(section_frame, bg="#F6FBFF")
+        check_frame2.pack(fill="x", padx=0, pady=(12, 0), anchor="w")
+
+        checkbox2 = tk.Checkbutton(
+            check_frame2,
+            text="Incluir capa do MP3 ao baixar do YouTube",
+            variable=self.youtube_artwork_var,
+            font=("Arial", 12),
+            bg="#F6FBFF",
+            fg="#333333",
+            activebackground="#F6FBFF",
+            activeforeground="#333333",
+            selectcolor="#F6FBFF",
+            command=lambda: self._on_setting_changed(
+                "youtube_artwork", self.youtube_artwork_var
+            ),
+        )
+        checkbox2.pack(anchor="w")
+
+        # Descrição
+        desc_frame2 = tk.Frame(section_frame, bg="#F6FBFF")
+        desc_frame2.pack(fill="x", padx=20, pady=(6, 0), anchor="w")
+
+        desc_lines2 = [
+            "Habilitado (padrão): Embute thumbnail do YouTube como capa",
+            "Desabilitado: MP3 sem capa de álbum",
+        ]
+        for line in desc_lines2:
+            desc = tk.Label(
+                desc_frame2,
+                text=line,
+                font=("Arial", 10),
+                bg="#F6FBFF",
+                fg="#666666",
+            )
+            desc.pack(anchor="w", pady=2)
+
         # Espaço para o botão
         button_frame = tk.Frame(container, bg="#F6FBFF")
         button_frame.pack(fill="x", pady=(24, 0), anchor="w")
@@ -2000,8 +2043,9 @@ class IsaacGUIApp:
                                             else:
                                                 # Duração OK (ou validação desabilitada), aceitar arquivo
                                                 self._log(f"  → YouTube: resultado #{idx} SUCESSO")
-                                                # Não adicionar artwork do CD — usar apenas metadados do YouTube
-                                                enrich_mp3_from_internet(mp3_path, url=url)
+                                                # Usar metadados do YouTube, com ou sem capa conforme configuração
+                                                include_artwork = self.settings.get("youtube_artwork", True)
+                                                enrich_mp3_from_internet(mp3_path, url=url, include_artwork=include_artwork)
                                                 success += 1
                                                 self.root.after(
                                                     0,
@@ -2091,8 +2135,9 @@ class IsaacGUIApp:
                                         else:
                                             # Duração OK (ou validação desabilitada), aceitar arquivo
                                             self._log(f"  → YouTube (var): resultado #{idx} SUCESSO")
-                                            # Não adicionar artwork do CD — usar apenas metadados do YouTube
-                                            enrich_mp3_from_internet(mp3_path, url=url)
+                                            # Usar metadados do YouTube, com ou sem capa conforme configuração
+                                            include_artwork = self.settings.get("youtube_artwork", True)
+                                            enrich_mp3_from_internet(mp3_path, url=url, include_artwork=include_artwork)
                                             success += 1
                                             self.root.after(
                                                 0,
@@ -2156,8 +2201,9 @@ class IsaacGUIApp:
                                     else:
                                         # Fallback mode: aceita mesmo que seja versão diferente
                                         self._log(f"  → YouTube (fallback): resultado #{idx} SUCESSO")
-                                        # Não adicionar artwork do CD — usar apenas metadados do YouTube
-                                        enrich_mp3_from_internet(mp3_path, url=url)
+                                        # Usar metadados do YouTube, com ou sem capa conforme configuração
+                                        include_artwork = self.settings.get("youtube_artwork", True)
+                                        enrich_mp3_from_internet(mp3_path, url=url, include_artwork=include_artwork)
                                         success += 1
                                         self.root.after(
                                             0,

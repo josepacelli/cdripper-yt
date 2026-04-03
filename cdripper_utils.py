@@ -628,12 +628,14 @@ def identify_with_acoustid(mp3_path: str) -> dict:
     return {}
 
 
-def enrich_mp3_from_internet(mp3_path: str, url: str = None) -> bool:
+def enrich_mp3_from_internet(mp3_path: str, url: str = None, include_artwork: bool = True) -> bool:
     """
     Tenta enriquecer as tags de um MP3 a partir da internet.
     1. Se url fornecida: extrai metadados do YouTube
     2. Se não tiver dados completos: usa AcoustID + MusicBrainz
     Retorna True se conseguiu enriquecer com algum dado.
+
+    include_artwork: se True, baixa e embute thumbnail como capa do álbum.
     """
     metadata = {}
 
@@ -649,8 +651,8 @@ def enrich_mp3_from_internet(mp3_path: str, url: str = None) -> bool:
     if not metadata:
         return False
 
-    # Baixar thumbnail se tiver URL
-    if metadata.get("thumbnail_url"):
+    # Baixar thumbnail se tiver URL e for solicitado
+    if include_artwork and metadata.get("thumbnail_url"):
         try:
             import urllib.request
 
