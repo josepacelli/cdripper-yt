@@ -58,6 +58,176 @@ from cdripper_utils import (
 )
 
 
+class PortugueseMessageBox:
+    """Cria diálogos customizados com botões em português."""
+
+    @staticmethod
+    def show_info(parent, title: str, message: str) -> None:
+        """Mostrar informação com botão OK em português."""
+        dialog = tk.Toplevel(parent)
+        dialog.title(title)
+        dialog.geometry("400x200")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+        dialog.transient(parent)
+
+        label = tk.Label(
+            dialog,
+            text=message,
+            font=("Arial", 11),
+            bg="#F6FBFF",
+            fg="#333333",
+            wraplength=350,
+            justify="left",
+        )
+        label.pack(pady=20, padx=20)
+
+        button = tk.Button(
+            dialog,
+            text="OK",
+            font=("Arial", 10),
+            bg="#2A9D8F",
+            fg="white",
+            padx=30,
+            pady=8,
+            command=dialog.destroy,
+            relief="flat",
+            cursor="hand2",
+        )
+        button.pack(pady=10)
+        dialog.focus()
+
+    @staticmethod
+    def show_warning(parent, title: str, message: str) -> None:
+        """Mostrar aviso com botão OK em português."""
+        dialog = tk.Toplevel(parent)
+        dialog.title(title)
+        dialog.geometry("400x200")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+        dialog.transient(parent)
+
+        label = tk.Label(
+            dialog,
+            text=message,
+            font=("Arial", 11),
+            bg="#F6FBFF",
+            fg="#B8860B",
+            wraplength=350,
+            justify="left",
+        )
+        label.pack(pady=20, padx=20)
+
+        button = tk.Button(
+            dialog,
+            text="OK",
+            font=("Arial", 10),
+            bg="#B8860B",
+            fg="white",
+            padx=30,
+            pady=8,
+            command=dialog.destroy,
+            relief="flat",
+            cursor="hand2",
+        )
+        button.pack(pady=10)
+        dialog.focus()
+
+    @staticmethod
+    def show_error(parent, title: str, message: str) -> None:
+        """Mostrar erro com botão OK em português."""
+        dialog = tk.Toplevel(parent)
+        dialog.title(title)
+        dialog.geometry("400x200")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+        dialog.transient(parent)
+
+        label = tk.Label(
+            dialog,
+            text=message,
+            font=("Arial", 11),
+            bg="#F6FBFF",
+            fg="#B00020",
+            wraplength=350,
+            justify="left",
+        )
+        label.pack(pady=20, padx=20)
+
+        button = tk.Button(
+            dialog,
+            text="OK",
+            font=("Arial", 10),
+            bg="#B00020",
+            fg="white",
+            padx=30,
+            pady=8,
+            command=dialog.destroy,
+            relief="flat",
+            cursor="hand2",
+        )
+        button.pack(pady=10)
+        dialog.focus()
+
+    @staticmethod
+    def ask_yes_no(parent, title: str, message: str) -> bool:
+        """Mostrar diálogo de confirmação Sim/Não em português. Retorna True se Sim, False se Não."""
+        result = {"value": False}
+
+        dialog = tk.Toplevel(parent)
+        dialog.title(title)
+        dialog.geometry("450x220")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+        dialog.transient(parent)
+
+        label = tk.Label(
+            dialog,
+            text=message,
+            font=("Arial", 11),
+            bg="#F6FBFF",
+            fg="#333333",
+            wraplength=400,
+            justify="left",
+        )
+        label.pack(pady=20, padx=20)
+
+        button_frame = tk.Frame(dialog, bg="#F6FBFF")
+        button_frame.pack(pady=10)
+
+        btn_yes = tk.Button(
+            button_frame,
+            text="Sim",
+            font=("Arial", 10),
+            bg="#2A9D8F",
+            fg="white",
+            padx=25,
+            pady=8,
+            command=lambda: (result.update({"value": True}), dialog.destroy()),
+            relief="flat",
+            cursor="hand2",
+        )
+        btn_yes.pack(side="left", padx=10)
+
+        btn_no = tk.Button(
+            button_frame,
+            text="Não",
+            font=("Arial", 10),
+            bg="#757575",
+            fg="white",
+            padx=25,
+            pady=8,
+            command=dialog.destroy,
+            relief="flat",
+            cursor="hand2",
+        )
+        btn_no.pack(side="left", padx=10)
+
+        dialog.focus()
+        dialog.wait_window()
+        return result["value"]
+
+
 class AnimatedSpinner:
     """Spinner animado para mostrar progresso durante operações."""
     def __init__(self):
@@ -1284,7 +1454,7 @@ class IsaacGUIApp:
         """Inicia download do vídeo selecionado em MP4."""
         sel = self.video_results_list.curselection()
         if not sel:
-            messagebox.showwarning("Seleção necessária", "Escolha um vídeo para baixar.")
+            PortugueseMessageBox.show_warning(self.root, "Seleção necessária", "Escolha um vídeo para baixar.")
             return
 
         idx = sel[0]
@@ -1297,7 +1467,7 @@ class IsaacGUIApp:
             url = f"https://www.youtube.com/watch?v={result['id']}"
 
         if not url:
-            messagebox.showerror("Erro", "Não foi possível extrair a URL do vídeo.")
+            PortugueseMessageBox.show_error(self.root, "Erro", "Não foi possível extrair a URL do vídeo.")
             return
 
         title = result.get("title", "vídeo")
@@ -1383,7 +1553,8 @@ class IsaacGUIApp:
         self.video_cancel_btn.configure(state="normal", text="⏹ Parar")
         self.video_status.configure(text="✔ Download concluído!", fg="#2B9348")
         self._log(f"Vídeo '{title}' baixado em {output_dir}")
-        messagebox.showinfo(
+        PortugueseMessageBox.show_info(
+            self.root,
             "Tudo pronto",
             f"Vídeo salvo em:\n{output_dir}/{title}.mp4"
         )
@@ -1575,7 +1746,7 @@ class IsaacGUIApp:
     def search_music(self) -> None:
         query = self.youtube_query.get().strip()
         if not query:
-            messagebox.showwarning("Faltou um nome", "Escreva o nome da música primeiro.")
+            PortugueseMessageBox.show_warning("Faltou um nome", "Escreva o nome da música primeiro.")
             return
 
         self.youtube_status.configure(text="Procurando músicas...", fg="#005F73")
@@ -1619,7 +1790,7 @@ class IsaacGUIApp:
     def download_selected_music(self) -> None:
         selected = self.results_list.curselection()
         if not selected:
-            messagebox.showwarning("Falta escolher", "Selecione uma música na lista para baixar.")
+            PortugueseMessageBox.show_warning("Falta escolher", "Selecione uma música na lista para baixar.")
             return
 
         idx = selected[0]
@@ -1648,7 +1819,7 @@ class IsaacGUIApp:
     def _on_download_done(self, mp3_path: str, title: str) -> None:
         if os.path.exists(mp3_path):
             self.youtube_status.configure(text=f"✔ {title}", fg="#2B9348")
-            messagebox.showinfo("Concluído", f"✔ Música salva!")
+            PortugueseMessageBox.show_info(self.root, "Concluído", f"✔ Música salva!")
         else:
             # Falha silenciosa — MP3 não foi criado
             self.youtube_status.configure(text="", fg="#333333")
@@ -1799,7 +1970,7 @@ class IsaacGUIApp:
 
         if not drives:
             self.cd_status.configure(text="Nenhuma unidade de CD detectada", fg="#8D3B2A")
-            messagebox.showwarning("Sem CD", "Nenhuma unidade de CD foi encontrada.")
+            PortugueseMessageBox.show_warning("Sem CD", "Nenhuma unidade de CD foi encontrada.")
         else:
             self.cd_status.configure(
                 text=f"🎵 {len(drives)} unidade(s) detectada(s). Expanda para navegar.",
@@ -1809,10 +1980,11 @@ class IsaacGUIApp:
 
     def start_copy_cd(self) -> None:
         if not self.current_cd_path:
-            messagebox.showwarning("Falta seleção", "Selecione uma pasta na navegação acima.")
+            PortugueseMessageBox.show_warning("Falta seleção", "Selecione uma pasta na navegação acima.")
             return
 
-        confirm = messagebox.askyesno(
+        confirm = PortugueseMessageBox.ask_yes_no(
+            self.root,
             "Confirmar cópia",
             "Vamos copiar os arquivos do CD mantendo a mesma estrutura de pastas.\n\nContinuar?",
         )
@@ -2283,7 +2455,7 @@ class IsaacGUIApp:
 
         msg = f"✔ {summary['total']} arquivo(s)\nSalvas em: {summary['dest']}"
         self.cd_status.configure(text="✔ Concluído!", fg="#2B9348")
-        messagebox.showinfo("Tudo pronto", msg)
+        PortugueseMessageBox.show_info(self.root, "Tudo pronto", msg)
 
     # ── Playlist YouTube ─────────────────────────────────────────────────────────
 
@@ -2338,7 +2510,7 @@ class IsaacGUIApp:
     def _start_playlist_download(self) -> None:
         """Inicia o download sequencial das faixas."""
         if not self.playlist_tracks:
-            messagebox.showwarning("Aviso", "Carregue uma playlist primeiro!")
+            PortugueseMessageBox.show_warning("Aviso", "Carregue uma playlist primeiro!")
             return
 
         output_dir = self.playlist_output_entry.get().strip() or "downloads"
