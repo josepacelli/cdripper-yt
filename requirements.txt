@@ -11,7 +11,11 @@ Pillow>=10.0.0
 pyacoustid>=1.3.0
 musicbrainzngs>=0.7.1
 
+# CD Audio ripping (cdripper-gui.py - TAB "Rip CD Áudio")
+discid>=1.1
+
 # GUI (cdripper-gui.py)
 # tkinter e dependencia de sistema do Python (nao pacote pip).
 # Linux Debian/Ubuntu: sudo apt install python3-tk
 # Para AcoustID (fingerprint): sudo apt install libchromaprint-tools (instala fpcalc)
+# Para CD Audio Ripping: sudo apt install libdiscid0 libdiscid-dev cdparanoia ffmpeg

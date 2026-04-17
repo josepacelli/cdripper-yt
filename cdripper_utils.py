@@ -664,3 +664,269 @@ def enrich_mp3_from_internet(mp3_path: str, url: str = None, include_artwork: bo
 
     enrich_tags(mp3_path, metadata)
     return True
+
+
+# ── CD Audio Ripping (Red Book / CDDA) ───────────────────────────────────────
+
+def detect_audio_cd_device() -> str | None:
+    """
+    Detecta um device com CD de áudio inserido.
+    Linux: tenta /dev/cdrom, /dev/sr0, /dev/sr1
+    macOS: procura por device de CD-ROM
+    Retorna o caminho do device ou None.
+    """
+    system = platform.system()
+
+    if system == "Linux":
+        candidates = ["/dev/cdrom", "/dev/sr0", "/dev/sr1", "/dev/sr2"]
+        for dev in candidates:
+            if os.path.exists(dev):
+                try:
+                    result = subprocess.run(
+                        ["cdparanoia", "-Q", "-d", dev],
+                        capture_output=True,
+                        timeout=5,
+                    )
+                    if result.returncode == 0:
+                        return dev
+                except Exception:
+                    pass
+        return None
+
+    elif system == "Darwin":
+        try:
+            result = subprocess.run(
+                ["diskutil", "list"], capture_output=True, text=True, timeout=5
+            )
+            for line in result.stdout.split("\n"):
+                if "CD" in line or "DVD" in line:
+                    parts = line.split()
+                    if parts:
+                        return f"/dev/{parts[0]}"
+        except Exception:
+            pass
+        return None
+
+    return None
+
+
+def get_cd_toc(device: str) -> list[dict] | None:
+    """
+    Lê a TOC (Table of Contents) do CD usando cdparanoia -Q.
+    Retorna lista de dicts: [{track_number, start_lba, duration_secs}, ...]
+    Ou None se falhar.
+    """
+    try:
+        result = subprocess.run(
+            ["cdparanoia", "-Q", "-d", device],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+
+        tracks = []
+        for line in result.stderr.split("\n"):
+            # Parse "  1[00:02.23]  00:12.45" → track 1, offset, duration
+            match = re.match(r"\s+(\d+)\[.*?\]\s+([\d:\.]+)", line)
+            if match:
+                track_num = int(match.group(1))
+                time_str = match.group(2)
+                parts = time_str.split(":")
+                if len(parts) == 2:
+                    mins, secs = int(parts[0]), float(parts[1])
+                    duration_secs = mins * 60 + secs
+                else:
+                    duration_secs = float(time_str)
+
+                tracks.append(
+                    {
+                        "track_number": track_num,
+                        "duration_secs": int(duration_secs),
+                    }
+                )
+
+        return tracks if tracks else None
+    except Exception as e:
+        get_logger().error(f"Erro ao ler TOC: {e}")
+        return None
+
+
+def compute_disc_id(device: str) -> str | None:
+    """
+    Calcula o DiscID do MusicBrainz usando a library discid.
+    Retorna a string do DiscID ou None se falhar.
+    """
+    try:
+        import discid
+
+        disc = discid.read(device)
+        return disc.id
+    except ImportError:
+        get_logger().warning("discid não instalado; DiscID lookup indisponível")
+        return None
+    except Exception as e:
+        get_logger().error(f"Erro ao calcular DiscID: {e}")
+        return None
+
+
+def lookup_cd_metadata(disc_id: str) -> dict | None:
+    """
+    Busca metadados do CD (álbum, artista, faixas) no MusicBrainz usando o DiscID.
+    Retorna dict: {album, artist, year, tracks: [{number, title, duration_secs}], artwork_url}
+    Ou None se não encontrar.
+    """
+    try:
+        import musicbrainzngs
+
+        musicbrainzngs.set_useragent("cdripper-yt", "1.2")
+
+        releases = musicbrainzngs.get_releases_by_discid(
+            disc_id, includes=["recordings", "artists"]
+        )
+        if not releases.get("release-list"):
+            return None
+
+        release = releases["release-list"][0]
+        album = release.get("title", "Desconhecido")
+        year = release.get("date", "")[:4] if release.get("date") else ""
+
+        artist_list = release.get("artist-credit", [])
+        artist = ""
+        if artist_list and len(artist_list) > 0:
+            artist = artist_list[0].get("artist", {}).get("name", "Desconhecido")
+
+        media = release.get("media", [{}])[0]
+        tracks = []
+        for track_data in media.get("track-list", []):
+            rec = track_data.get("recording", {})
+            title = rec.get("title", f"Faixa {track_data.get('position', '?')}")
+            duration = rec.get("length", 0)
+            duration_secs = (
+                int(duration / 1000) if duration else 0
+            )
+
+            tracks.append(
+                {
+                    "number": int(track_data.get("position", 0)),
+                    "title": title,
+                    "duration_secs": duration_secs,
+                }
+            )
+
+        artwork_url = None
+        if release.get("cover-art-archive", {}).get("front"):
+            artwork_url = f"https://coverartarchive.org/release/{release.get('id')}/front-250.jpg"
+
+        return {
+            "album": album,
+            "artist": artist,
+            "year": year,
+            "tracks": tracks,
+            "artwork_url": artwork_url,
+        }
+    except Exception as e:
+        get_logger().error(f"Erro ao buscar metadados do CD: {e}")
+        return None
+
+
+def fetch_album_artwork(artwork_url: str) -> bytes | None:
+    """
+    Baixa a capa do álbum (bytes) a partir de uma URL.
+    Retorna bytes da imagem ou None se falhar.
+    """
+    try:
+        import urllib.request
+
+        with urllib.request.urlopen(artwork_url, timeout=10) as resp:
+            return resp.read()
+    except Exception as e:
+        get_logger().debug(f"Erro ao baixar artwork: {e}")
+        return None
+
+
+def rip_track(
+    device: str, track_number: int, output_wav: str, progress_cb=None
+) -> bool:
+    """
+    Ripa uma faixa de áudio do CD usando cdparanoia.
+    Salva como WAV em output_wav.
+    progress_cb: callable(stdout_line) para updates de progresso.
+    Retorna True/False.
+    """
+    try:
+        cmd = ["cdparanoia", "-d", device, "-B", str(track_number), output_wav]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+
+        if result.returncode == 0 and os.path.exists(output_wav):
+            return True
+
+        get_logger().error(f"cdparanoia falhou para track {track_number}")
+        return False
+    except Exception as e:
+        get_logger().error(f"Erro ao rippar track {track_number}: {e}")
+        return False
+
+
+def wav_to_mp3(
+    wav_path: str,
+    mp3_path: str,
+    title: str = "",
+    artist: str = "",
+    album: str = "",
+    track: int = 0,
+    artwork_bytes: bytes | None = None,
+) -> bool:
+    """
+    Converte WAV para MP3 usando ffmpeg.
+    Enriquece tags ID3 com os metadados fornecidos e embute artwork se fornecido.
+    Deleta o WAV após sucesso.
+    Retorna True/False.
+    """
+    try:
+        cmd = [
+            "ffmpeg",
+            "-i",
+            wav_path,
+            "-q:a",
+            "0",
+            "-map",
+            "a",
+            mp3_path,
+        ]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            timeout=300,
+        )
+
+        if result.returncode != 0 or not os.path.exists(mp3_path):
+            get_logger().error(f"ffmpeg falhou para {wav_path}")
+            return False
+
+        # Enriquecer tags
+        metadata = {
+            "title": title,
+            "artist": artist,
+            "album": album,
+            "track": track,
+        }
+        if artwork_bytes:
+            metadata["artwork_bytes"] = artwork_bytes
+            metadata["artwork_mime"] = "image/jpeg"
+            metadata["artwork_type"] = 3
+            metadata["artwork_desc"] = "Cover"
+
+        enrich_tags(mp3_path, metadata)
+
+        # Deletar WAV
+        try:
+            os.remove(wav_path)
+        except Exception:
+            pass
+
+        return True
+    except Exception as e:
+        get_logger().error(f"Erro ao converter WAV para MP3: {e}")
+        return False

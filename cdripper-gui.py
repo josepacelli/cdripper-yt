@@ -55,6 +55,13 @@ from cdripper_utils import (
     setup_logging,
     get_logger,
     get_version,
+    detect_audio_cd_device,
+    get_cd_toc,
+    compute_disc_id,
+    lookup_cd_metadata,
+    fetch_album_artwork,
+    rip_track,
+    wav_to_mp3,
 )
 
 
@@ -96,6 +103,7 @@ class PortugueseMessageBox:
         )
         button.pack(pady=10)
         dialog.focus()
+        dialog.update_idletasks()
 
     @staticmethod
     def show_warning(parent, title: str, message: str) -> None:
@@ -132,6 +140,7 @@ class PortugueseMessageBox:
         )
         button.pack(pady=10)
         dialog.focus()
+        dialog.update_idletasks()
 
     @staticmethod
     def show_error(parent, title: str, message: str) -> None:
@@ -168,6 +177,7 @@ class PortugueseMessageBox:
         )
         button.pack(pady=10)
         dialog.focus()
+        dialog.update_idletasks()
 
     @staticmethod
     def ask_yes_no(parent, title: str, message: str) -> bool:
@@ -176,7 +186,7 @@ class PortugueseMessageBox:
 
         dialog = tk.Toplevel(parent)
         dialog.title(title)
-        dialog.geometry("450x220")
+        dialog.geometry("500x280")
         dialog.resizable(False, False)
         dialog.grab_set()
         dialog.transient(parent)
@@ -187,43 +197,44 @@ class PortugueseMessageBox:
             font=("Arial", 11),
             bg="#F6FBFF",
             fg="#333333",
-            wraplength=400,
+            wraplength=420,
             justify="left",
         )
-        label.pack(pady=20, padx=20)
+        label.pack(pady=20, padx=20, expand=True, fill="both")
 
         button_frame = tk.Frame(dialog, bg="#F6FBFF")
-        button_frame.pack(pady=10)
+        button_frame.pack(pady=20, side="bottom")
 
         btn_yes = tk.Button(
             button_frame,
             text="Sim",
-            font=("Arial", 10),
+            font=("Arial", 14, "bold"),
             bg="#2A9D8F",
             fg="white",
-            padx=25,
-            pady=8,
+            padx=40,
+            pady=15,
             command=lambda: (result.update({"value": True}), dialog.destroy()),
             relief="flat",
             cursor="hand2",
         )
-        btn_yes.pack(side="left", padx=10)
+        btn_yes.pack(side="left", padx=15)
 
         btn_no = tk.Button(
             button_frame,
             text="Não",
-            font=("Arial", 10),
+            font=("Arial", 14, "bold"),
             bg="#757575",
             fg="white",
-            padx=25,
-            pady=8,
+            padx=40,
+            pady=15,
             command=dialog.destroy,
             relief="flat",
             cursor="hand2",
         )
-        btn_no.pack(side="left", padx=10)
+        btn_no.pack(side="left", padx=15)
 
         dialog.focus()
+        dialog.update_idletasks()
         dialog.wait_window()
         return result["value"]
 
@@ -347,7 +358,7 @@ class Win7ProgressBar(tk.Canvas):
 SETTINGS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cdripper_settings.json")
 DEFAULT_SETTINGS = {
     "duration_validation": False,  # padrão desabilitado
-    "youtube_artwork": True,  # padrão: incluir capa
+    "youtube_artwork": False,  # padrão: não incluir capa
 }
 
 
@@ -399,6 +410,16 @@ class IsaacGUIApp:
         self.playlist_cancel: bool = False  # Flag para cancelar download da playlist
         self.playlist_start_time: float = 0.0  # Tempo de início do download
         self.playlist_in_progress: bool = False  # Flag para indicar download em andamento
+
+        # CD Audio (Rip CDDA)
+        self.audio_cd_cancel: bool = False  # Flag para cancelar rip
+        self.audio_cd_in_progress: bool = False  # Flag para indicar rip em andamento
+        self.audio_cd_tracks: list[dict] = []  # Faixas do CD
+        self.audio_cd_metadata: dict | None = None  # Metadados do CD (album, artist, etc)
+        self.audio_cd_artwork_bytes: bytes | None = None  # Bytes da capa do álbum
+        self.audio_cd_check_vars: list[tk.BooleanVar] = []  # BooleanVars para seleção de faixas
+        self.audio_cd_device: str | None = None  # Device do CD (/dev/cdrom, etc)
+        self.audio_cd_start_time: float = 0.0  # Tempo de início do rip
 
         self._build_styles()
         self._build_header()
@@ -476,18 +497,21 @@ class IsaacGUIApp:
         self.cd_tab = tk.Frame(notebook, bg="#F6FBFF")
         self.playlist_tab = tk.Frame(notebook, bg="#F6FBFF")
         self.video_tab = tk.Frame(notebook, bg="#F6FBFF")
+        self.audio_cd_tab = tk.Frame(notebook, bg="#F6FBFF")
         self.settings_tab = tk.Frame(notebook, bg="#F6FBFF")
 
         notebook.add(self.youtube_tab, text="📺 YouTube")
         notebook.add(self.cd_tab, text="💿 Copiar CD")
         notebook.add(self.playlist_tab, text="💿 Playlist")
         notebook.add(self.video_tab, text="🎬 Baixar Vídeo")
+        notebook.add(self.audio_cd_tab, text="📀 Rip CD Áudio")
         notebook.add(self.settings_tab, text="⚙️ Configurações")
 
         self._build_youtube_tab()
         self._build_cd_tab()
         self._build_playlist_tab()
         self._build_video_tab()
+        self._build_audio_cd_tab()
         self._build_settings_tab()
 
     def _build_youtube_tab(self) -> None:
@@ -1223,6 +1247,687 @@ class IsaacGUIApp:
         )
         self.video_cancel_btn.pack(side="right")
 
+    def _build_audio_cd_tab(self) -> None:
+        """Constrói a aba para Rip de CD de Áudio (CDDA)."""
+        container = tk.Frame(self.audio_cd_tab, bg="#F6FBFF")
+        container.pack(fill="both", expand=True, padx=12, pady=10)
+
+        # ────────────────────────────────────────────────────────────────────
+        # Botão de detecção
+        # ────────────────────────────────────────────────────────────────────
+        detect_btn = tk.Button(
+            container,
+            text="🔍 Detectar CD de Áudio",
+            font=self.big_btn_font,
+            bg="#0077B6",
+            fg="white",
+            activebackground="#0065a0",
+            padx=20,
+            pady=8,
+            command=self._detect_audio_cd,
+            relief="flat",
+            cursor="hand2",
+        )
+        detect_btn.pack(fill="x", pady=(0, 12))
+
+        # ────────────────────────────────────────────────────────────────────
+        # Informações do álbum (artwork + metadados)
+        # ────────────────────────────────────────────────────────────────────
+        info_frame = tk.Frame(container, bg="#F6FBFF")
+        info_frame.pack(fill="x", pady=(0, 12))
+
+        # Artwork (placeholder)
+        self.audio_cd_artwork_label = tk.Label(
+            info_frame,
+            text="🎵",
+            font=("Arial", 48),
+            bg="#E8F4F8",
+            width=8,
+            height=4,
+            relief="solid",
+            borderwidth=1,
+        )
+        self.audio_cd_artwork_label.pack(side="left", padx=(0, 12))
+
+        # Metadados
+        metadata_frame = tk.Frame(info_frame, bg="#F6FBFF")
+        metadata_frame.pack(side="left", fill="both", expand=True)
+
+        self.audio_cd_artist_label = tk.Label(
+            metadata_frame,
+            text="Artista: (nenhum CD detectado)",
+            font=("Arial", 12, "bold"),
+            bg="#F6FBFF",
+            fg="#114B5F",
+            justify="left",
+        )
+        self.audio_cd_artist_label.pack(anchor="w", pady=2)
+
+        self.audio_cd_album_label = tk.Label(
+            metadata_frame,
+            text="Álbum: —",
+            font=("Arial", 12),
+            bg="#F6FBFF",
+            fg="#114B5F",
+            justify="left",
+        )
+        self.audio_cd_album_label.pack(anchor="w", pady=2)
+
+        self.audio_cd_year_label = tk.Label(
+            metadata_frame,
+            text="Ano: —",
+            font=("Arial", 11),
+            bg="#F6FBFF",
+            fg="#6B4E16",
+            justify="left",
+        )
+        self.audio_cd_year_label.pack(anchor="w", pady=2)
+
+        # ────────────────────────────────────────────────────────────────────
+        # Lista de faixas
+        # ────────────────────────────────────────────────────────────────────
+        tracks_label = tk.Label(
+            container,
+            text="Faixas do CD:",
+            font=self.section_font,
+            bg="#F6FBFF",
+            fg="#114B5F",
+        )
+        tracks_label.pack(anchor="w", pady=(12, 6))
+
+        # Botões de seleção
+        select_frame = tk.Frame(container, bg="#F6FBFF")
+        select_frame.pack(fill="x", pady=(0, 6))
+
+        select_all_btn = tk.Button(
+            select_frame,
+            text="✓ Selecionar Tudo",
+            font=("Arial", 11),
+            bg="#4CAF50",
+            fg="white",
+            padx=12,
+            pady=4,
+            command=self._select_all_audio_tracks,
+            relief="flat",
+            cursor="hand2",
+        )
+        select_all_btn.pack(side="left", padx=(0, 6))
+
+        clear_btn = tk.Button(
+            select_frame,
+            text="☐ Limpar Seleção",
+            font=("Arial", 11),
+            bg="#757575",
+            fg="white",
+            padx=12,
+            pady=4,
+            command=self._clear_audio_tracks,
+            relief="flat",
+            cursor="hand2",
+        )
+        clear_btn.pack(side="left")
+
+        # Treeview de faixas
+        tracks_frame = tk.Frame(container, bg="#F6FBFF")
+        tracks_frame.pack(fill="both", expand=True, pady=(0, 12))
+
+        scrollbar = tk.Scrollbar(tracks_frame)
+        scrollbar.pack(side="right", fill="y")
+
+        self.audio_cd_tracks_tree = ttk.Treeview(
+            tracks_frame,
+            columns=("Nº", "Título", "Duração"),
+            height=8,
+            yscrollcommand=scrollbar.set,
+        )
+        self.audio_cd_tracks_tree.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=self.audio_cd_tracks_tree.yview)
+
+        self.audio_cd_tracks_tree.heading("#0", text="✓")
+        self.audio_cd_tracks_tree.column("#0", width=30)
+        self.audio_cd_tracks_tree.heading("Nº", text="Nº")
+        self.audio_cd_tracks_tree.column("Nº", width=40)
+        self.audio_cd_tracks_tree.heading("Título", text="Título")
+        self.audio_cd_tracks_tree.column("Título", width=250)
+        self.audio_cd_tracks_tree.heading("Duração", text="Duração")
+        self.audio_cd_tracks_tree.column("Duração", width=70)
+
+        self.audio_cd_tracks_tree.bind("<Button-1>", self._toggle_audio_track)
+
+        # ────────────────────────────────────────────────────────────────────
+        # Pasta de destino
+        # ────────────────────────────────────────────────────────────────────
+        dest_label = tk.Label(
+            container,
+            text="2) Pasta de destino:",
+            font=self.section_font,
+            bg="#F6FBFF",
+            fg="#114B5F",
+        )
+        dest_label.pack(anchor="w", pady=(12, 6))
+
+        dest_frame = tk.Frame(container, bg="#F6FBFF")
+        dest_frame.pack(fill="x", pady=(0, 12))
+
+        self.audio_cd_output_entry = tk.Entry(
+            dest_frame,
+            font=("Arial", 11),
+            width=40,
+        )
+        self.audio_cd_output_entry.insert(0, "downloads")
+        self.audio_cd_output_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+
+        browse_btn = tk.Button(
+            dest_frame,
+            text="📁 Procurar",
+            font=("Arial", 11),
+            bg="#8ECAE6",
+            fg="#09324C",
+            padx=12,
+            pady=4,
+            command=self._browse_audio_output,
+            relief="flat",
+            cursor="hand2",
+        )
+        browse_btn.pack(side="left")
+
+        # ────────────────────────────────────────────────────────────────────
+        # Progress frame (inicialmente oculto)
+        # ────────────────────────────────────────────────────────────────────
+        self.audio_cd_progress_frame = tk.Frame(container, bg="#F6FBFF")
+
+        # Source e arquivo atual
+        info_frame = tk.Frame(self.audio_cd_progress_frame, bg="#F6FBFF")
+        info_frame.pack(fill="x", pady=(10, 8))
+
+        self.audio_cd_source_label = tk.Label(
+            info_frame,
+            text="",
+            font=("Arial", 10),
+            bg="#F6FBFF",
+            fg="#444",
+        )
+        self.audio_cd_source_label.pack(anchor="w")
+
+        self.audio_cd_current_track_label = tk.Label(
+            info_frame,
+            text="",
+            font=("Arial Rounded MT Bold", 11),
+            bg="#F6FBFF",
+            fg="#083B66",
+        )
+        self.audio_cd_current_track_label.pack(anchor="w", pady=(2, 0))
+
+        # Progress bar
+        self.audio_cd_progress_bar = Win7ProgressBar(
+            self.audio_cd_progress_frame, height=30
+        )
+        self.audio_cd_progress_bar.pack(fill="x", pady=10)
+
+        # Progress info (% e contadores)
+        progress_info = tk.Frame(self.audio_cd_progress_frame, bg="#F6FBFF")
+        progress_info.pack(fill="x", pady=(0, 10))
+
+        self.audio_cd_progress_percent = tk.Label(
+            progress_info,
+            text="0%",
+            font=("Arial", 10, "bold"),
+            bg="#F6FBFF",
+            fg="#00B4D8",
+        )
+        self.audio_cd_progress_percent.pack(side="left", padx=(0, 20))
+
+        self.audio_cd_progress_count = tk.Label(
+            progress_info,
+            text="0/0 faixas",
+            font=("Arial", 10),
+            bg="#F6FBFF",
+            fg="#333",
+        )
+        self.audio_cd_progress_count.pack(side="left", padx=(0, 20))
+
+        self.audio_cd_progress_speed = tk.Label(
+            progress_info,
+            text="0 KB/s",
+            font=("Arial", 10),
+            bg="#F6FBFF",
+            fg="#00B4D8",
+        )
+        self.audio_cd_progress_speed.pack(side="left", padx=(0, 20))
+
+        self.audio_cd_progress_elapsed = tk.Label(
+            progress_info,
+            text="00:00",
+            font=("Arial", 10),
+            bg="#F6FBFF",
+            fg="#6B4E16",
+        )
+        self.audio_cd_progress_elapsed.pack(side="left", padx=(0, 20))
+
+        # Botão cancelar
+        self.audio_cd_cancel_btn = tk.Button(
+            progress_info,
+            text="⛔ Cancelar",
+            font=("Arial", 10, "bold"),
+            bg="#B00020",
+            fg="white",
+            padx=12,
+            pady=2,
+            command=self._cancel_audio_rip,
+            relief="flat",
+            cursor="hand2",
+        )
+        self.audio_cd_cancel_btn.pack(side="right")
+
+        # ────────────────────────────────────────────────────────────────────
+        # Ação (Rip)
+        # ────────────────────────────────────────────────────────────────────
+        action_frame = tk.Frame(container, bg="#F6FBFF")
+        action_frame.pack(fill="x", pady=(12, 0))
+
+        self.audio_cd_status = tk.Label(
+            action_frame,
+            text="",
+            font=("Arial", 11),
+            bg="#F6FBFF",
+            fg="#00B4D8",
+        )
+        self.audio_cd_status.pack(side="left")
+
+        rip_btn = tk.Button(
+            action_frame,
+            text="🎵 Rip Selecionadas",
+            font=self.big_btn_font,
+            bg="#E76F51",
+            fg="white",
+            activebackground="#D65A40",
+            padx=20,
+            pady=8,
+            command=self._start_audio_rip,
+            relief="flat",
+            cursor="hand2",
+        )
+        rip_btn.pack(side="right")
+
+    def _detect_audio_cd(self) -> None:
+        """Detecta um CD de áudio e carrega seus metadados."""
+        self.audio_cd_status.configure(text="🔍 Detectando...", fg="#00B4D8")
+        self.root.update_idletasks()
+
+        def worker() -> None:
+            try:
+                device = detect_audio_cd_device()
+                if not device:
+                    self.root.after(
+                        0,
+                        lambda: self._on_audio_cd_detect_done(None),
+                    )
+                    return
+
+                toc = get_cd_toc(device)
+                if not toc:
+                    self.root.after(
+                        0,
+                        lambda: self._on_audio_cd_detect_done(None),
+                    )
+                    return
+
+                disc_id = compute_disc_id(device)
+                metadata = None
+                if disc_id:
+                    metadata = lookup_cd_metadata(disc_id)
+
+                self.root.after(
+                    0,
+                    lambda: self._on_audio_cd_detect_done(
+                        {"device": device, "toc": toc, "metadata": metadata}
+                    ),
+                )
+            except Exception as exc:
+                self._log(f"Erro ao detectar CD: {exc}")
+                self.root.after(0, lambda: self._on_audio_cd_detect_done(None))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_audio_cd_detect_done(self, result: dict | None) -> None:
+        """Callback após detecção de CD."""
+        if result is None:
+            self.audio_cd_status.configure(text="⊘ Nenhum CD detectado", fg="#E76F51")
+            self.audio_cd_artist_label.configure(text="Artista: (nenhum CD detectado)")
+            self.audio_cd_album_label.configure(text="Álbum: —")
+            self.audio_cd_year_label.configure(text="Ano: —")
+            self._clear_audio_tracks_tree()
+            return
+
+        self.audio_cd_device = result["device"]
+        self.audio_cd_tracks = result["toc"]
+        self.audio_cd_metadata = result.get("metadata") or {}
+
+        # Preencher metadados
+        artist = self.audio_cd_metadata.get("artist", "Desconhecido")
+        album = self.audio_cd_metadata.get("album", "Desconhecido")
+        year = self.audio_cd_metadata.get("year", "")
+
+        self.audio_cd_artist_label.configure(text=f"Artista: {artist}")
+        self.audio_cd_album_label.configure(text=f"Álbum: {album}")
+        self.audio_cd_year_label.configure(text=f"Ano: {year}" if year else "Ano: —")
+
+        # Baixar artwork em background
+        if self.audio_cd_metadata.get("artwork_url"):
+            def fetch_artwork():
+                artwork_bytes = fetch_album_artwork(self.audio_cd_metadata["artwork_url"])
+                self.root.after(
+                    0,
+                    lambda: self._on_artwork_fetched(artwork_bytes),
+                )
+
+            threading.Thread(target=fetch_artwork, daemon=True).start()
+
+        # Preencher treeview
+        self._refresh_audio_tracks_tree()
+
+        self.audio_cd_status.configure(
+            text=f"✓ CD detectado ({len(self.audio_cd_tracks)} faixas)", fg="#2A9D8F"
+        )
+
+    def _on_artwork_fetched(self, artwork_bytes: bytes | None) -> None:
+        """Callback após download de artwork."""
+        if artwork_bytes:
+            self.audio_cd_artwork_bytes = artwork_bytes
+            try:
+                from PIL import Image, ImageTk
+                import io
+
+                img = Image.open(io.BytesIO(artwork_bytes))
+                img.thumbnail((80, 80))
+                photo = ImageTk.PhotoImage(img)
+                self.audio_cd_artwork_label.configure(image=photo, text="")
+                self.audio_cd_artwork_label.image = photo
+            except Exception:
+                pass
+
+    def _refresh_audio_tracks_tree(self) -> None:
+        """Preenche o treeview com as faixas do CD."""
+        self._clear_audio_tracks_tree()
+
+        metadata_tracks = self.audio_cd_metadata.get("tracks", [])
+        metadata_map = {t["number"]: t for t in metadata_tracks}
+
+        self.audio_cd_check_vars = []
+        for toc_track in self.audio_cd_tracks:
+            track_num = toc_track["track_number"]
+            duration_secs = toc_track.get("duration_secs", 0)
+            duration_str = f"{int(duration_secs // 60):02d}:{int(duration_secs % 60):02d}"
+
+            meta_track = metadata_map.get(track_num, {})
+            title = meta_track.get("title", f"Faixa {track_num}")
+
+            check_var = tk.BooleanVar(value=True)
+            self.audio_cd_check_vars.append((track_num, check_var))
+
+            self.audio_cd_tracks_tree.insert(
+                "",
+                "end",
+                text="✓",
+                values=(track_num, title, duration_str),
+                tags=("selected",),
+            )
+
+    def _clear_audio_tracks_tree(self) -> None:
+        """Limpa o treeview de faixas."""
+        for item in self.audio_cd_tracks_tree.get_children():
+            self.audio_cd_tracks_tree.delete(item)
+        self.audio_cd_check_vars = []
+
+    def _toggle_audio_track(self, event) -> None:
+        """Toggle de seleção de faixa ao clicar."""
+        item = self.audio_cd_tracks_tree.selection()[0] if self.audio_cd_tracks_tree.selection() else None
+        if not item:
+            return
+
+        # Obter índice no check_vars
+        items = self.audio_cd_tracks_tree.get_children()
+        idx = items.index(item) if item in items else -1
+        if idx < 0 or idx >= len(self.audio_cd_check_vars):
+            return
+
+        track_num, check_var = self.audio_cd_check_vars[idx]
+        check_var.set(not check_var.get())
+
+        # Atualizar visual
+        new_text = "✓" if check_var.get() else "☐"
+        values = self.audio_cd_tracks_tree.item(item, "values")
+        self.audio_cd_tracks_tree.item(item, text=new_text, values=values)
+
+    def _select_all_audio_tracks(self) -> None:
+        """Seleciona todas as faixas."""
+        items = self.audio_cd_tracks_tree.get_children()
+        for idx, (_, check_var) in enumerate(self.audio_cd_check_vars):
+            check_var.set(True)
+            if idx < len(items):
+                values = self.audio_cd_tracks_tree.item(items[idx], "values")
+                self.audio_cd_tracks_tree.item(items[idx], text="✓", values=values)
+
+    def _clear_audio_tracks(self) -> None:
+        """Limpa seleção de faixas."""
+        items = self.audio_cd_tracks_tree.get_children()
+        for idx, (_, check_var) in enumerate(self.audio_cd_check_vars):
+            check_var.set(False)
+            if idx < len(items):
+                values = self.audio_cd_tracks_tree.item(items[idx], "values")
+                self.audio_cd_tracks_tree.item(items[idx], text="☐", values=values)
+
+    def _browse_audio_output(self) -> None:
+        """Abre diálogo de seleção de pasta."""
+        folder = filedialog.askdirectory(title="Escolher pasta de destino")
+        if folder:
+            self.audio_cd_output_entry.delete(0, tk.END)
+            self.audio_cd_output_entry.insert(0, folder)
+
+    def _start_audio_rip(self) -> None:
+        """Inicia o rip de faixas selecionadas."""
+        if not self.audio_cd_device:
+            PortugueseMessageBox.show_info(
+                self.root, "⊘ CD não detectado", "Por favor, detecte um CD primeiro."
+            )
+            return
+
+        selected = [track_num for track_num, check_var in self.audio_cd_check_vars if check_var.get()]
+        if not selected:
+            PortugueseMessageBox.show_info(
+                self.root, "⊘ Nenhuma faixa selecionada", "Selecione pelo menos uma faixa."
+            )
+            return
+
+        output_dir = self.audio_cd_output_entry.get().strip() or "downloads"
+
+        msg = f"Rip {len(selected)} faixa(s)?\n\nDestino: {output_dir}"
+        if not PortugueseMessageBox.ask_yes_no(self.root, "Confirmar Rip", msg):
+            return
+
+        self.audio_cd_progress_frame.pack(fill="x", pady=(10, 0))
+        self.audio_cd_cancel.configure(text="⛔ Cancelar", state="normal")
+        self.audio_cd_cancel: bool = False
+        self.audio_cd_in_progress: bool = True
+        self.audio_cd_start_time = time.time()
+
+        def worker() -> None:
+            self._do_audio_rip(selected, output_dir)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _do_audio_rip(self, selected_tracks: list[int], output_dir: str) -> None:
+        """Worker para rip de faixas."""
+        total = len(selected_tracks)
+        copied = 0
+        failed = 0
+        temp_wavs = []
+
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+
+            for idx, track_num in enumerate(selected_tracks):
+                if self.audio_cd_cancel:
+                    break
+
+                track_info = next(
+                    (t for t in self.audio_cd_tracks if t["track_number"] == track_num),
+                    None,
+                )
+                if not track_info:
+                    continue
+
+                duration_secs = track_info.get("duration_secs", 0)
+                meta_track = next(
+                    (t for t in self.audio_cd_metadata.get("tracks", []) if t["number"] == track_num),
+                    {},
+                )
+                title = meta_track.get("title", f"Faixa {track_num:02d}")
+
+                # Criar nome do MP3
+                sanitized_title = title.replace("/", "_").replace("\\", "_")
+                mp3_filename = f"{track_num:02d} - {sanitized_title}.mp3"
+                mp3_path = os.path.join(output_dir, mp3_filename)
+
+                # Update progress
+                self.root.after(
+                    0,
+                    lambda idx=idx, title=title: self._update_audio_rip_progress(
+                        idx, total, title
+                    ),
+                )
+
+                # Tentar rip
+                temp_wav = os.path.join(output_dir, f".tmp_track_{track_num}.wav")
+                temp_wavs.append(temp_wav)
+
+                if rip_track(self.audio_cd_device, track_num, temp_wav):
+                    # Converter WAV → MP3
+                    artist = self.audio_cd_metadata.get("artist", "")
+                    album = self.audio_cd_metadata.get("album", "")
+
+                    if wav_to_mp3(
+                        temp_wav,
+                        mp3_path,
+                        title=title,
+                        artist=artist,
+                        album=album,
+                        track=track_num,
+                        artwork_bytes=self.audio_cd_artwork_bytes,
+                    ):
+                        copied += 1
+                        self._log(f"✔ {mp3_filename}")
+                    else:
+                        # Fallback YouTube
+                        self._try_youtube_fallback_audio(
+                            title, artist, duration_secs, mp3_path
+                        )
+                        copied += 1
+                else:
+                    # Fallback YouTube
+                    artist = self.audio_cd_metadata.get("artist", "")
+                    if self._try_youtube_fallback_audio(
+                        title, artist, duration_secs, mp3_path
+                    ):
+                        copied += 1
+                    else:
+                        failed += 1
+
+        except Exception as e:
+            self._log(f"Erro durante rip: {e}")
+        finally:
+            # Limpar WAVs temporários
+            for wav_path in temp_wavs:
+                try:
+                    if os.path.exists(wav_path):
+                        os.remove(wav_path)
+                except Exception:
+                    pass
+
+            self.root.after(
+                0,
+                lambda: self._on_audio_rip_done({"copied": copied, "failed": failed, "total": total, "dest": output_dir}),
+            )
+
+    def _try_youtube_fallback_audio(
+        self, title: str, artist: str, expected_duration: int, output_mp3_path: str
+    ) -> bool:
+        """Tenta baixar uma faixa do YouTube como fallback."""
+        try:
+            query = f"{artist} {title}" if artist else title
+            results = search_youtube(
+                query, max_results=3, expected_duration_secs=expected_duration
+            )
+            if not results:
+                return False
+
+            url = results[0].get("url")
+            if not url:
+                return False
+
+            output_dir = os.path.dirname(output_mp3_path)
+            filename = os.path.basename(output_mp3_path)
+
+            download_mp3(url, filename.replace(".mp3", ""), output_dir)
+
+            # Verificar se foi criado
+            if os.path.exists(output_mp3_path):
+                enrich_mp3_from_internet(
+                    output_mp3_path,
+                    url=url,
+                    include_artwork=self.audio_cd_artwork_bytes is not None,
+                )
+                self._log(f"✔ YouTube: {filename}")
+                return True
+        except Exception:
+            pass
+
+        return False
+
+    def _update_audio_rip_progress(self, done: int, total: int, track_title: str = "") -> None:
+        """Atualiza progress durante rip."""
+        self.audio_cd_progress_bar["value"] = done
+        self.audio_cd_progress_bar["maximum"] = total
+        self.audio_cd_progress_count.configure(text=f"{done}/{total} faixas")
+        self.audio_cd_progress_percent.configure(text=f"{int(100 * done / total)}%")
+        self.audio_cd_current_track_label.configure(text=f"🎵 {track_title}")
+
+        elapsed = time.time() - self.audio_cd_start_time
+        self.audio_cd_progress_elapsed.configure(
+            text=f"{int(elapsed // 60):02d}:{int(elapsed % 60):02d}"
+        )
+
+        self.root.update_idletasks()
+
+    def _cancel_audio_rip(self) -> None:
+        """Cancela o rip em andamento."""
+        self.audio_cd_cancel = True
+        self.audio_cd_cancel_btn.configure(state="disabled", text="⏹ Cancelando...")
+
+    def _on_audio_rip_done(self, summary: dict) -> None:
+        """Callback após término do rip."""
+        self.audio_cd_in_progress = False
+        self.audio_cd_progress_frame.pack_forget()
+        self.audio_cd_cancel_btn.configure(state="normal", text="⛔ Cancelar")
+
+        total = summary.get("total", 0)
+        copied = summary.get("copied", 0)
+        failed = summary.get("failed", 0)
+
+        if copied > 0:
+            self.audio_cd_status.configure(
+                text=f"✔ {copied}/{total} faixas copiadas", fg="#2A9D8F"
+            )
+            PortugueseMessageBox.show_info(
+                self.root,
+                "✔ Rip Completo",
+                f"✔ {copied}/{total} faixas copiadas com sucesso!\nDestino: {summary.get('dest', 'downloads')}",
+            )
+        else:
+            self.audio_cd_status.configure(
+                text="⊘ Rip cancelado", fg="#E76F51"
+            )
+
     def _load_settings(self) -> dict:
         """Carrega configurações persistentes do arquivo JSON."""
         try:
@@ -1236,10 +1941,13 @@ class IsaacGUIApp:
     def _save_settings(self) -> None:
         """Salva configurações persistentes em arquivo JSON."""
         try:
+            self._log(f"[SETTINGS] Salvando em: {SETTINGS_FILE}")
+            self._log(f"[SETTINGS] Dados: {self.settings}")
             with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
                 json.dump(self.settings, f, indent=2, ensure_ascii=False)
-        except Exception:
-            pass
+            self._log("[SETTINGS] Salvo com sucesso!")
+        except Exception as e:
+            self._log(f"[SETTINGS] ERRO ao salvar: {e}")
 
     def _build_settings_tab(self) -> None:
         """Constrói a aba de Configurações."""
@@ -1388,6 +2096,7 @@ class IsaacGUIApp:
 
     def _on_save_settings(self) -> None:
         """Salva configurações e mostra confirmação."""
+        self._log("[UI] Botão Salvar clicado")
         self._save_settings()
         self.settings_status.configure(text="✔ Configurações salvas com sucesso!")
         # Limpar mensagem após 3 segundos
